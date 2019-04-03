@@ -20,4 +20,4 @@ script:
 - cmake --build build
 - for i in bin/*; do ./$i; done
 after_success:
-- sh .travis-push.sh
+- sh travis-push.sh
