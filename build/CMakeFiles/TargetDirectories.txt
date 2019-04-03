@@ -1,0 +1,3 @@
+/Users/travis/build/NickPuljic/CPP-Channels/build/CMakeFiles/rebuild_cache.dir
+/Users/travis/build/NickPuljic/CPP-Channels/build/CMakeFiles/edit_cache.dir
+/Users/travis/build/NickPuljic/CPP-Channels/build/CMakeFiles/point_test.dir
