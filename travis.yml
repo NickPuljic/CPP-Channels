@@ -21,3 +21,4 @@ script:
 - cmake -H. -Bbuild
 - cmake --build build
 - ./bin/point_test
+- echo "Done!"
