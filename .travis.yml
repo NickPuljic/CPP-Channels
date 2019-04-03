@@ -12,12 +12,9 @@ addons:
     packages:
       - cmake-data
       - cmake
-
 before_install:
 - brew update
 script:
 - cmake -H. -Bbuild
 - cmake --build build
 - for i in bin/*; do ./$i; done
-after_success:
-- sh travis-push.sh
