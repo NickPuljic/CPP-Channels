@@ -15,7 +15,7 @@ addons:
 
 before_install:
 - echo "hiNick"
-- brew update && brew install cmake
+- brew update
 script:
 - cmake -H. -Bbuild
 - cmake --build build
