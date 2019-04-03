@@ -14,10 +14,8 @@ addons:
       - cmake
 
 before_install:
-- echo "hiNick"
 - brew update
 script:
 - cmake -H. -Bbuild
 - cmake --build build
-- ./bin/point_test
-- echo "Done!"
+- for i in bin/*; do ./$i; done
