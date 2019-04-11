@@ -227,23 +227,27 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
 }
 
 void f1(Chan<int>& chan) {
-    auto a = 5;
-    chan.send(a);
-
-    std::cout << "f1 sent 5" << std::endl;
+    chan.send(1);
+    chan.send(2);
+    chan.send(3);
+    std::cerr << "t1 done" << std::endl;
 }
 
 void f2(Chan<int>& chan) {
-    int b = 0;
-    chan.recv(b);
-
-    std::cout << "f2 received " << b << std::endl;
+    int num = 0;
+    for (auto i = 0; i < 3; i++) {
+        chan.recv(num);
+        std::cout << "t2 received: " << num << std::endl;
+    }
 }
 
 int main() {
-    Chan<int> chan = Chan<int>(3);
+    Chan<int> chan = Chan<int>(5);
 
     std::thread t1{f1, std::ref(chan)};
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
     std::thread t2{f2, std::ref(chan)};
 
     t1.join();
