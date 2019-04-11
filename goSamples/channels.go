@@ -8,7 +8,7 @@ func main() {
 
 	go func() {
 		time.Sleep(time.Second)
-		//messages <- "ping"
+		messages <- "ping"
 	}()
 
 	msg := <-messages
