@@ -25,10 +25,48 @@ void recv_assignment_n_from_channel(Chan<int>& chan, int n) {
     }
 }
 
+void send_n(Chan<int>& chan, int n) {
+    chan.send(n);
+}
+
 void recv_n(Chan<int>& chan, int n) {
     int num;
     chan.recv(num);
     REQUIRE(num == n);
+}
+
+void must_stay_blocked(Chan<int>& chan) {
+    chan.send(-1);
+    // This line can never execute
+    REQUIRE(1 == 2);
+}
+
+TEST_CASE( "unbuffered channel" ) {
+    Chan<int> chan;
+
+    SECTION( "unbuffered blocking two channels") {
+        std::thread t1{send_n_to_channel, std::ref(chan), 1};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::thread t2{must_stay_blocked, std::ref(chan)};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        int i = chan.recv();
+        REQUIRE(i == 0);
+        t1.join();
+        t2.detach();
+    }
+    SECTION( "unbuffered receive twice") {
+        std::thread t1{send_n, std::ref(chan), 5};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::thread t2{send_n, std::ref(chan), 7};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        REQUIRE(chan.recv() == 5);
+        REQUIRE(chan.recv() == 7);
+
+        t1.join();
+        t2.join();
+    }
 }
 
 TEST_CASE( "sending and receiving" ) {
