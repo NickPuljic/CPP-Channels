@@ -32,7 +32,7 @@ public:
     void push(T&& elem) {cur_size++; q.push(elem);} // move elem
     T& front() {return q.front();}
     // TODO also need const_reference front() like std::queue?
-    void pop() {cur_size--; q.pop();} // Nick - I dont like the way you've been using pop
+    void pop() {cur_size--; q.pop();}
 
     // TODO use size_t?
     unsigned current_size() {return cur_size;}
@@ -48,10 +48,10 @@ private:
     // using a std::promise object, we pass a value (TODO or an exception if channel is closed),
     // that is acquired asynchronously by a corresponding std::future object.
     // a blocking sender needs an address to send its data to, and a blocking receiver needs the data.
-    // TODO explain why ptr used, due to std::queue impl. Nick - explain
-    std::queue<std::pair<std::promise<void>*, T>> send_queue; // Nick - have an issue with send_queue (it lets you send past size)
-    std::queue<std::promise<T>*> recv_queue; //Nick, do we not give this a size?
-    bool is_closed = false; // Nick - Change
+    // TODO explain why ptr used, due to std::queue impl
+    std::queue<std::pair<std::promise<void>*, T>> send_queue;
+    std::queue<std::promise<T>*> recv_queue;
+    bool is_closed = false;
     std::mutex chan_lock;
 
     bool chan_send(const T& src, bool is_blocking);
@@ -66,7 +66,7 @@ public:
 
     // TODO go channels return T/F. change void to T/F.
     void send(const T& src);
-    // TODO dst as return value? how to return T/F? Nick - want to hear about this
+    // TODO dst as return value? how to return T/F?
     void recv(T& dst);
 
     // non-blocking versions of send and recv.
@@ -74,7 +74,6 @@ public:
     // who can combine them in if/else block to simulate the select stmt,
     // until the select stmt is implemented.
     // TODO move to private once select stmt added.
-    // Nick - want to know difference
     void send_nonblocking(const T& src);
     void recv_nonblocking(T& dst);
 
@@ -100,9 +99,8 @@ void Chan<T>::recv(T& dst) {
 
 
 template<typename T>
-bool Chan<T>::chan_send(const T& src, bool is_blocking) { // Nick - What is is_blocking for?
+bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // TODO can "this" chan be null, or is this Go-specific? see if c == nil ... in chansend().
-    // Nick - what to do if you try to send when buffer is full? - it blocks rn
 
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     // TODO read chan.go's notes on single-word read optimization here. can do same using Buffer class?
@@ -111,9 +109,8 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) { // Nick - What is is_b
         && ((buffer.capacity() == 0 && recv_queue.empty()) || (buffer.capacity() > 0 && buffer.is_full())))
         return false;
 
-    // scoped_lock can't be used b/c we must .unlock() prior to future.get(). Nick - want to hear more
+    // scoped_lock can't be used b/c we must .unlock() prior to future.get()
     std::unique_lock lck{chan_lock};
-    //std::cout << is_closed << std::endl; // Nick - explain to brian what happened, want to hear more about is_closed
 
     // sending to a closed channel is an error.
     if (is_closed) {
@@ -125,7 +122,7 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) { // Nick - What is is_b
     // bypassing the buffer (if any).
     if (!recv_queue.empty()) {
         // Get the first promise pointer on the queue
-        std::promise<T>* promise_ptr = recv_queue.front(); // Nick - I might have an issue with using front then pop instead of pop first
+        std::promise<T>* promise_ptr = recv_queue.front();
         recv_queue.pop();
 
         // give the promise the value of src
@@ -146,15 +143,15 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) { // Nick - What is is_b
 
     // block on the channel. Some receiver will complete our operation for us.
     // TODO explain why ptr (handle is on heap).
-    // Nick - Do any of these pause the thread? - I want to go over this with Brian
     std::promise<void>* promise_ptr = new std::promise<void>;
-    std::future<void> future = promise_ptr->get_future(); // Nick - .get_future?
+    std::future<void> future = promise_ptr->get_future();
     // TODO explain why pair; cannot memcpy handle.
     // TODO change pair to struct/class. beware of multiple copies here.
     std::pair<std::promise<void>*, T> promise_data_pair(promise_ptr, src);
     send_queue.push(promise_data_pair);
+
     lck.unlock();
-    // Nick - why future.get, not .wait or something else? (it locks here)
+
     future.get();
     // TODO what if exception sent over future?
     // Note that there is no data passing here, b/c done in chan_recv.
@@ -174,7 +171,7 @@ template<typename T>
 std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // TODO can "this" chan be null, or is this Go-specific? see chanrecv().
 
-    std::unique_lock lck{chan_lock}; // Nick - is this used?
+    std::unique_lock lck{chan_lock};
 
     // from chan.go:
     // Fast path: check for failed non-blocking operation without acquiring the lock.
@@ -182,9 +179,8 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // incorrect behavior when racing with a close.
     // TODO read the equivalent in chan.go. loads from buffer.capacity() and closed must be atomic.
     // locked at entrance for now.
-    // Nick - Can we remove these warnings?
     if (!is_blocking
-        && (buffer.capacity() == 0 && send_queue.empty() || buffer.capacity() > 0 && buffer.current_size())
+        && ((buffer.capacity() == 0 && send_queue.empty()) || (buffer.capacity() > 0 && buffer.current_size()))
         && !is_closed) {
         return std::pair<bool, bool>(false, false);
     }
@@ -199,11 +195,10 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // Otherwise, receive from head of buffer and add sender's value to the tail of the buffer.
     // (both map to the same buffer slot because the queue (buffer) is full,
     // i.e. if buffer was not full, no sender would be waiting)
-    // Nick - shouldnt we check if something is in the buffer before checking send_queue? (this is weird behavior, lets buffered chans have larger space than they should)
     if (!send_queue.empty()) {
         std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front(); // TODO beware mem
         send_queue.pop();
-        // Nick - I'm going to need an explanation
+
         if (buffer.capacity() == 0) {
             dst = promise_data_pair.second; // TODO beware mem
         } else {
@@ -228,9 +223,8 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     }
 
     // block on the channel.
-    // Nick - I changed a lot of this
     std::promise<T> promise;
-    std::future<T> future = promise.get_future(); // Nick - this line was erroring
+    std::future<T> future = promise.get_future();
     recv_queue.push(&promise);
 
     lck.unlock();

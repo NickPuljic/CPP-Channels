@@ -27,7 +27,7 @@ TEST_CASE( "sending and receiving" ) {
     Chan<int> chan = Chan<int>(15);
 
     SECTION( "sending and receiving async" ) {
-        std::thread t1{send_n_to_channel, std::ref(chan), 15}; // Why std::ref? - Nick
+        std::thread t1{send_n_to_channel, std::ref(chan), 15};
 
         // Wait for them all to send
         t1.join();
