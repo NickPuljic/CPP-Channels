@@ -11,19 +11,16 @@
 
 
 // unlike chan.go, we modularize buffer management.
-// implemented using std::queue for MVP.
-// TODO impl using circular buffer.
-// TODO should Buffer be a nested class in Chan?
+// implemented using std::queue
 template<typename T>
 class Buffer {
 private:
     std::queue<T> q;
-    unsigned cap;
-    unsigned cur_size;
+    size_t cap;
+    size_t cur_size;
 
 public:
-    // TODO use explicit specifier?
-    Buffer(unsigned n) {cap = n; cur_size = 0;}
+    explicit Buffer(unsigned n) {cap = n; cur_size = 0;}
 
     // TODO impl ~Buffer();
     // TODO are copy and move needed if private class?
@@ -31,16 +28,14 @@ public:
     void push(const T& elem) {cur_size++; q.push(elem);} // copy elem
     void push(T&& elem) {cur_size++; q.push(elem);} // move elem
     T& front() {return q.front();}
-    // TODO also need const_reference front() like std::queue?
     void pop() {cur_size--; q.pop();}
 
-    // TODO use size_t?
-    unsigned current_size() {return cur_size;}
-    unsigned capacity() {return cap;}
+    size_t current_size() {return cur_size;}
+    size_t capacity() {return cap;}
     bool is_full() {return cur_size == cap;}
 };
 
-template<typename T> // TODO rename T?
+template<typename T>
 class Chan {
 private:
     Buffer<T> buffer;
@@ -48,7 +43,6 @@ private:
     // using a std::promise object, we pass a value (TODO or an exception if channel is closed),
     // that is acquired asynchronously by a corresponding std::future object.
     // a blocking sender needs an address to send its data to, and a blocking receiver needs the data.
-    // TODO explain why ptr used, due to std::queue impl
     std::queue<std::pair<std::promise<void>*, T>> send_queue;
     std::queue<std::promise<T>*> recv_queue;
     bool is_closed = false;
@@ -59,8 +53,8 @@ private:
     std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
 
 public:
-    // TODO use explicit keyword?
-    Chan(unsigned n);
+    explicit Chan(unsigned n);
+    Chan();
 
     // TODO impl destructor, copy, and move.
 
@@ -68,6 +62,8 @@ public:
     void send(const T& src);
     // TODO dst as return value? how to return T/F?
     void recv(T& dst);
+    // TODO implement
+    T recv();
 
     // non-blocking versions of send and recv.
     // for now, expose the non-blocking versions to the user,
@@ -85,12 +81,21 @@ public:
 template<typename T>
 Chan<T>::Chan(unsigned n) : buffer(n) {};
 
+template<typename T> // TODO Add test cases
+Chan<T>::Chan() : buffer(0) {};
+
 
 template<typename T>
 void Chan<T>::send(const T& src) {
     chan_send(src, true);
 }
 
+template<typename T>
+T Chan<T>::recv() {
+    T temp;
+    recv(temp);
+    return temp;
+}
 
 template<typename T>
 void Chan<T>::recv(T& dst) {

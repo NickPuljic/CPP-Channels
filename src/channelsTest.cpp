@@ -17,6 +17,14 @@ void recv_n_from_channel(Chan<int>& chan, int n) {
     }
 }
 
+void recv_assignment_n_from_channel(Chan<int>& chan, int n) {
+    int num;
+    for (int i = 0; i < n; i++) {
+        num = chan.recv();
+        REQUIRE(num == i);
+    }
+}
+
 void recv_n(Chan<int>& chan, int n) {
     int num;
     chan.recv(num);
@@ -33,6 +41,16 @@ TEST_CASE( "sending and receiving" ) {
         t1.join();
 
         std::thread t2{recv_n_from_channel, std::ref(chan), 15};
+
+        t2.join();
+    }
+    SECTION( "recv assignment") {
+        std::thread t1{send_n_to_channel, std::ref(chan), 15};
+
+        // Wait for them all to send
+        t1.join();
+
+        std::thread t2{recv_assignment_n_from_channel, std::ref(chan), 15};
 
         t2.join();
     }
