@@ -62,7 +62,7 @@ public:
     void send(const T& src);
     // TODO dst as return value? how to return T/F?
     void recv(T& dst);
-    // TODO implement
+
     T recv();
 
     // non-blocking versions of send and recv.
