@@ -114,6 +114,16 @@ bool Chan<T>::recv(T& dst) {
     return selected_received.second;
 }
 
+template<typename T>
+bool send_nonblocking(const T& src) {
+    return chan_send(src, false);
+}
+
+template<typename T>
+bool recv_nonblocking(T& dst) {
+    std::pair<bool, bool> selected_received = chan_recv(dst, false);
+    return selected_received.first;
+}
 
 template<typename T>
 bool Chan<T>::chan_send(const T& src, bool is_blocking) {
