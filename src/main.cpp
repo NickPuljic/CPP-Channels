@@ -58,20 +58,24 @@ public:
 
     // TODO impl destructor, copy, and move.
 
-    // TODO go channels return T/F. change void to T/F.
+    // blocking send (ex. chan <- 1) does not return a boolean.
     void send(const T& src);
-    // TODO dst as return value? how to return T/F?
-    void recv(T& dst);
+    
+    // return value indicates whether the communication succeeded.
+    // the value is true if the value received was delivered by a successful send operation to the channel,
+    // or false if it is a zero value generated because the channel is closed and empty.
+    bool recv(T& dst);
 
     T recv();
-
+    
     // non-blocking versions of send and recv.
     // for now, expose the non-blocking versions to the user,
     // who can combine them in if/else block to simulate the select stmt,
     // until the select stmt is implemented.
+    // TODO comment return value semantics.
     // TODO move to private once select stmt added.
-    void send_nonblocking(const T& src);
-    void recv_nonblocking(T& dst);
+    bool send_nonblocking(const T& src);
+    bool recv_nonblocking(T& dst);
 
     void close();
 };
@@ -98,8 +102,9 @@ T Chan<T>::recv() {
 }
 
 template<typename T>
-void Chan<T>::recv(T& dst) {
-    chan_recv(dst, true);
+bool Chan<T>::recv(T& dst) {
+    std::pair<bool, bool> selected_received = chan_recv(dst, true);
+    return selected_received.second;
 }
 
 
