@@ -12,27 +12,31 @@
 
 // unlike chan.go, we modularize buffer management.
 // implemented using std::queue
+// TODO decide if all methods need to be atomic. If so, use a mutex.
+// TODO decide if memory order need to be specified.
 template<typename T>
 class Buffer {
 private:
     std::queue<T> q;
     size_t cap;
-    size_t cur_size;
+    // current size is atomic to enable lock-free fast-track condition in chan_recv.
+    // note that ++, --, operator= on cur_size are atomic.
+    std::atomic<size_t> cur_size{0};
 
 public:
-    explicit Buffer(unsigned n) {cap = n; cur_size = 0;}
+    explicit Buffer(unsigned n) {cap = n;}
 
     // TODO impl ~Buffer();
     // TODO are copy and move needed if private class?
 
-    void push(const T& elem) {cur_size++; q.push(elem);} // copy elem
-    void push(T&& elem) {cur_size++; q.push(elem);} // move elem
+    void push(const T& elem) {q.push(elem); cur_size++;} // copy elem
+    void push(T&& elem) {q.push(elem); cur_size++;} // move elem
     T& front() {return q.front();}
-    void pop() {cur_size--; q.pop();}
+    void pop() {q.pop(); cur_size--;}
 
     size_t current_size() {return cur_size;}
     size_t capacity() {return cap;}
-    bool is_full() {return cur_size == cap;}
+    bool is_full() {return cap == cur_size;}
 };
 
 template<typename T>
@@ -45,7 +49,10 @@ private:
     // a blocking sender needs an address to send its data to, and a blocking receiver needs the data.
     std::queue<std::pair<std::promise<void>*, T>> send_queue;
     std::queue<std::promise<T>*> recv_queue;
-    bool is_closed = false;
+
+    // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
+    // note that assignment and operator= on cur_size are atomic.
+    std::atomic<bool> is_closed{false};
     std::mutex chan_lock;
 
     bool chan_send(const T& src, bool is_blocking);
@@ -181,19 +188,20 @@ template<typename T>
 std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // TODO can "this" chan be null, or is this Go-specific? see chanrecv().
 
-    std::unique_lock lck{chan_lock};
-
     // from chan.go:
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     // The order of operations is important here: reversing the operations can lead to
     // incorrect behavior when racing with a close.
-    // TODO read the equivalent in chan.go. loads from buffer.capacity() and closed must be atomic.
-    // locked at entrance for now.
+    // Note that current_size and is_closed are each read atomically,
+    // but they need not be read together atomically.
+    // i.e. current_size may have been modified before reading is_closed.
     if (!is_blocking
         && ((buffer.capacity() == 0 && send_queue.empty()) || (buffer.capacity() > 0 && buffer.current_size() == 0))
         && !is_closed) {
         return std::pair<bool, bool>(false, false);
     }
+
+    std::unique_lock lck{chan_lock};
 
     // else if c is closed, returns (true, false).
     if (is_closed && buffer.current_size() == 0) {
