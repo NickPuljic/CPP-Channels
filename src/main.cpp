@@ -169,9 +169,10 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
 
     lck.unlock();
 
+    // if close() passes an exception, rethrow to user.
+    // Note that there is no data passing here (ex. dst = future.get()), b/c done in chan_recv.
     future.get();
-    // TODO what if exception sent over future?
-    // Note that there is no data passing here, b/c done in chan_recv.
+
     return true;
 }
 
@@ -246,6 +247,49 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     recv_queue.push(&promise);
 
     lck.unlock();
-    dst = future.get();
+    
+    try {
+        // if close() passes exception, dst is not set, because future.get() throws the exception.
+        dst = future.get();
+    }
+    catch (...) { // TODO organize exceptions
+        // ignore exception passed by close(), b/c !is_closed indicator is returned to user.
+    }
+
     return std::pair<bool, bool>(true, !is_closed);
+}
+
+
+template<typename T>
+void Chan<T>::close(){
+    std::unique_lock lck{chan_lock};
+
+    if (is_closed) {
+        // TODO organize exceptions.
+        throw "cannot close a closed channel";
+    }
+
+    is_closed = true;
+
+    // release all receivers.
+    // TODO WHY? by invariant?
+    while (!send_queue.empty()) {
+        std::promise<T>* promise_ptr = recv_queue.front();
+        recv_queue.pop();
+        // instead of passing some data indicating close() to the future, pass exception for clarity.
+        // the waiting receiver should handle this exception.
+        // TODO consider passing a zero-ed T.
+        // TODO organize exceptions.
+        promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
+    }
+
+    // release all senders.
+    // By Go semantics, senders should throw exception to users.
+    while (!send_queue.empty()) {
+        std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
+        send_queue.pop();
+        // the waiting sender should rethrow this exception.
+        // TODO organize exceptions.
+        promise_data_pair.first->set_exception(std::make_exception_ptr(std::exception()));
+    }
 }
