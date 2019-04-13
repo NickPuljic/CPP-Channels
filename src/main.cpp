@@ -185,7 +185,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // TODO read the equivalent in chan.go. loads from buffer.capacity() and closed must be atomic.
     // locked at entrance for now.
     if (!is_blocking
-        && ((buffer.capacity() == 0 && send_queue.empty()) || (buffer.capacity() > 0 && buffer.current_size()))
+        && ((buffer.capacity() == 0 && send_queue.empty()) || (buffer.capacity() > 0 && buffer.current_size() == 0))
         && !is_closed) {
         return std::pair<bool, bool>(false, false);
     }
