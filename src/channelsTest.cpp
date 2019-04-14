@@ -125,3 +125,28 @@ TEST_CASE( "sending and receiving" ) {
         t2.join();
     }
 }
+
+void send_n_and_close(Chan<int>& chan, int n) {
+    send_n_to_channel(chan, n);
+    chan.close();
+}
+
+void recv_n_using_for_range(Chan<int>& chan, int n) {
+    int i = 0;
+    for (auto num : chan) {
+        REQUIRE(num == i);
+        i++;
+    }
+}
+
+TEST_CASE( "send, close, and recv using for range" ) {
+    Chan<int> chan = Chan<int>(3);
+
+    // TODO add section
+
+    std::thread t1{send_n_and_close, std::ref(chan), 3};
+    t1.join();
+
+    std::thread t2{recv_n_using_for_range, std::ref(chan), 3};
+    t2.join();
+}
