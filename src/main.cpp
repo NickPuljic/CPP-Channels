@@ -97,7 +97,7 @@ public:
         recv_queue(std::move(c.recv_queue)),
         is_closed(),
         chan_lock() {
-            is_closed = c.is_closed.exchange();
+            is_closed = c.is_closed.exchange(0);
         }
 
     // TODO impl destructor?
@@ -204,9 +204,8 @@ public:
 template<typename T>
 Chan<T>::Chan(unsigned n) : buffer(n) {};
 
-template<typename T> // TODO Add test cases
+template<typename T>
 Chan<T>::Chan() : buffer(0) {};
-
 
 template<typename T>
 void Chan<T>::send(const T& src) {
@@ -281,12 +280,11 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     }
 
     // block on the channel. Some receiver will complete our operation for us.
-    // TODO explain why ptr (handle is on heap).
-    std::promise<void>* promise_ptr = new std::promise<void>;
-    std::future<void> future = promise_ptr->get_future();
+    std::promise<void> promise;
+    std::future<void> future = promise.get_future();
     // TODO explain why pair; cannot memcpy handle.
     // TODO change pair to struct/class. beware of multiple copies here.
-    std::pair<std::promise<void>*, T> promise_data_pair(promise_ptr, src);
+    std::pair<std::promise<void>*, T> promise_data_pair(&promise, src);
     send_queue.push(promise_data_pair);
 
     lck.unlock();
