@@ -13,7 +13,6 @@
 
 
 // unlike chan.go, we modularize buffer management.
-// implemented using std::queue
 // TODO decide if all methods need to be atomic. If so, use a mutex.
 // TODO decide if memory order need to be specified.
 template<typename T>
@@ -143,7 +142,7 @@ public:
 
         // used in both constructor and operator++.
         void next() {
-            bool received = chan_.recv(cur_data_);
+            bool received = chan_.recv(cur_data_); // TODO: Nick - why doesnt this block?
             if (!received) {
                 is_end_ = true;
             }
