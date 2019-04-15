@@ -141,8 +141,9 @@ public:
         T cur_data_;
 
         // used in both constructor and operator++.
+        // TODO: Throw an error if you try to iterator over an un closed channel
         void next() {
-            bool received = chan_.recv(cur_data_); // TODO: Nick - why doesnt this block?
+            bool received = chan_.recv_nonblocking(cur_data_); // TODO: Nick - why doesnt this block?
             if (!received) {
                 is_end_ = true;
             }

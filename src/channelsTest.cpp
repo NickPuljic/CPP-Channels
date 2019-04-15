@@ -216,7 +216,7 @@ void send_n_and_close(Chan<int>& chan, int n) {
     chan.close();
 }
 
-void recv_n_using_for_range(Chan<int>& chan, int n) {
+void recv_n_using_for_range(Chan<int>& chan) {
     int i = 0;
     for (auto num : chan) {
         REQUIRE(num == i);
@@ -233,7 +233,12 @@ TEST_CASE( "send, close, and recv using for range" ) {
         t1.join();
 
         // Range through channel and make sure it can recv
-        std::thread t2{recv_n_using_for_range, std::ref(chan), 4};
+        std::thread t2{recv_n_using_for_range, std::ref(chan)};
         t2.join();
+    }
+    SECTION("for loop should have nothing") {
+        chan.close();
+        std::thread t1{recv_n_using_for_range, std::ref(chan)};
+        t1.join();
     }
 }
