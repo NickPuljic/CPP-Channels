@@ -227,11 +227,13 @@ void recv_n_using_for_range(Chan<int>& chan, int n) {
 TEST_CASE( "send, close, and recv using for range" ) {
     Chan<int> chan = Chan<int>(3);
 
-    // TODO add section
+    SECTION("send and close then range") {
+        // Send 0, 1, 2 to chan and close
+        std::thread t1{send_n_and_close, std::ref(chan), 3};
+        t1.join();
 
-    std::thread t1{send_n_and_close, std::ref(chan), 3};
-    t1.join();
-
-    std::thread t2{recv_n_using_for_range, std::ref(chan), 3};
-    t2.join();
+        // Range through channel and make sure it can recv
+        std::thread t2{recv_n_using_for_range, std::ref(chan), 4};
+        t2.join();
+    }
 }
