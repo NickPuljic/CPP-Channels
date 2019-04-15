@@ -41,6 +41,32 @@ void must_stay_blocked(Chan<int>& chan) {
     REQUIRE(1 == 2);
 }
 
+TEST_CASE( "non-blocking send and recive test" ) {
+    Chan<int> c1;
+
+    SECTION( "test nonblocking send" ) {
+        REQUIRE(c1.send_nonblocking(5) == false);
+
+        std::thread t1{recv_n, std::ref(c1), 10};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        REQUIRE(c1.send_nonblocking(10) == true);
+        t1.join();
+    }
+
+    SECTION( "test nonblocking recv" ) {
+        int r = 0;
+        REQUIRE(c1.recv_nonblocking(r) == false);
+
+        std::thread t1{send_n, std::ref(c1), 10};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        REQUIRE(c1.recv_nonblocking(r) == true);
+        REQUIRE(r == 10);
+        t1.join();
+    }
+
+}
+
+
 TEST_CASE( "copy and move constructors" ) {
     Chan<int> c1(5);
 

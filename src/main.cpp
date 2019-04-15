@@ -226,12 +226,12 @@ bool Chan<T>::recv(T& dst) {
 }
 
 template<typename T>
-bool send_nonblocking(const T& src) {
+bool Chan<T>::send_nonblocking(const T& src) {
     return chan_send(src, false);
 }
 
 template<typename T>
-bool recv_nonblocking(T& dst) {
+bool Chan<T>::recv_nonblocking(T& dst) {
     std::pair<bool, bool> selected_received = chan_recv(dst, false);
     return selected_received.first;
 }
