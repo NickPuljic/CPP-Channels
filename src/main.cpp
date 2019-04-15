@@ -393,7 +393,7 @@ void Chan<T>::close(){
 
     // release all receivers.
     // TODO WHY? by invariant?
-    while (!send_queue.empty()) {
+    while (!recv_queue.empty()) {
         std::promise<T>* promise_ptr = recv_queue.front();
         recv_queue.pop();
         // instead of passing some data indicating close() to the future, pass exception for clarity.
