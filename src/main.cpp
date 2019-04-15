@@ -1,6 +1,8 @@
 #include <iostream>
 #include <queue>
 #include <future>
+#include <atomic>
+#include <thread>
 
 // TODO Are following functions/components from chan.go necessaryy?
 // send
@@ -22,21 +24,38 @@ private:
     // current size is atomic to enable lock-free fast-track condition in chan_recv.
     // note that ++, --, operator= on cur_size are atomic.
     std::atomic<size_t> cur_size{0};
-
 public:
     explicit Buffer(unsigned n) {cap = n;}
 
-    // TODO impl ~Buffer();
-    // TODO are copy and move needed if private class?
+    // Copy constructor
+    Buffer(const Buffer &b) :
+        q(b.q),
+        cap(b.cap),
+        cur_size() {
+            cur_size = b.cur_size.load();
+        }
 
-    void push(const T& elem) {q.push(elem); cur_size++;} // copy elem
-    void push(T&& elem) {q.push(elem); cur_size++;} // move elem
+    // Move constructor
+    Buffer(Buffer &&b) :
+        q(std::move(b.q)),
+        cap(std::move(b.cap)),
+        cur_size() {
+            cur_size = b.cur_size.exchange(0);
+        }
+
+    // TODO impl ~Buffer() if destructor needed
+
+    // Copy push()
+    void push(const T& elem) {q.push(elem); cur_size++;}
+    // Move push()
+    void push(T&& elem) {q.push(elem); cur_size++;}
+
     T& front() {return q.front();}
     void pop() {q.pop(); cur_size--;}
 
-    size_t current_size() {return cur_size;}
+    size_t current_size() {return cur_size.load();}
     size_t capacity() {return cap;}
-    bool is_full() {return cap == cur_size;}
+    bool is_full() {return cap == cur_size.load();}
 };
 
 template<typename T>
@@ -56,25 +75,43 @@ private:
     std::mutex chan_lock;
 
     bool chan_send(const T& src, bool is_blocking);
-    // TODO comment this pair. see chan.go.
     std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
-
 public:
     explicit Chan(unsigned n);
     Chan();
 
-    // TODO impl destructor, copy, and move.
+    // Copy constructor
+    Chan(const Chan &c) :
+        buffer(c.buffer),
+        send_queue(c.send_queue),
+        recv_queue(c.recv_queue),
+        is_closed(),
+        chan_lock() {
+            is_closed = c.is_closed.load();
+        }
+
+    // Move constructor
+    Chan(Chan &&c) :
+        buffer(std::move(c.buffer)),
+        send_queue(std::move(c.send_queue)),
+        recv_queue(std::move(c.recv_queue)),
+        is_closed(),
+        chan_lock() {
+            is_closed = c.is_closed.exchange();
+        }
+
+    // TODO impl destructor?
 
     // blocking send (ex. chan <- 1) does not return a boolean.
     void send(const T& src);
-    
+
     // return value indicates whether the communication succeeded.
     // the value is true if the value received was delivered by a successful send operation to the channel,
     // or false if it is a zero value generated because the channel is closed and empty.
     bool recv(T& dst);
-
+    // Assignment recv
     T recv();
-    
+
     // non-blocking versions of send and recv.
     // for now, expose the non-blocking versions to the user,
     // who can combine them in if/else block to simulate the select stmt,
@@ -97,13 +134,13 @@ public:
     private:
         Chan& chan_;  // to call chan.recv().
         bool is_end_; // indicates whether the iterator has reached the end.
-        
+
         // cur_data keeps (a copy of) the data that was recv()ed.
         // cur_data cannot be T&, because at the end (one passed the last), it cannot reference any data.
         // TODO use pointer and void comparison to eliminate copies.
         //      But, to do so, we need to construct an empty T, to be passed to recv().
         T cur_data_;
-        
+
         // used in both constructor and operator++.
         void next() {
             bool received = chan_.recv(cur_data_);
@@ -120,7 +157,7 @@ public:
         using difference_type = void; // TODO std::ptrdiff_t;
         using pointer = T*;
         using reference = T&;
-        
+
         // required methods of iterator.
         // constructor is called by begin() and end() only.
         iterator(Chan& chan, bool is_end) : chan_(chan), is_end_(is_end) {
@@ -332,7 +369,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     recv_queue.push(&promise);
 
     lck.unlock();
-    
+
     try {
         // if close() passes exception, dst is not set, because future.get() throws the exception.
         dst = future.get();
