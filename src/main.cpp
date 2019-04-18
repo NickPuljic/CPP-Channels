@@ -2,15 +2,6 @@
 #include <queue>
 #include <future>
 #include <atomic>
-#include <thread>
-
-// TODO Are following functions/components from chan.go necessaryy?
-// send
-// sendDirect
-// recvDirect
-// race controls
-// debug
-
 
 // unlike chan.go, we modularize buffer management.
 // TODO decide if all methods need to be atomic. If so, use a mutex.
@@ -24,7 +15,7 @@ private:
     // note that ++, --, operator= on cur_size are atomic.
     std::atomic<size_t> cur_size{0};
 public:
-    explicit Buffer(unsigned n) {cap = n;}
+    explicit Buffer(size_t n) {cap = n;}
 
     // Copy constructor
     Buffer(const Buffer &b) :
@@ -76,8 +67,7 @@ private:
     bool chan_send(const T& src, bool is_blocking);
     std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
 public:
-    explicit Chan(unsigned n);
-    Chan();
+    explicit Chan(size_t n = 0);
 
     // Copy constructor
     Chan(const Chan &c) :
@@ -202,10 +192,7 @@ public:
 
 // TODO understand compiler error: "Explicitly initialize member which does not have a default constructor"
 template<typename T>
-Chan<T>::Chan(unsigned n) : buffer(n) {};
-
-template<typename T>
-Chan<T>::Chan() : buffer(0) {};
+Chan<T>::Chan(size_t n) : buffer(n) {};
 
 template<typename T>
 void Chan<T>::send(const T& src) {
