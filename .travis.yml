@@ -1,17 +1,8 @@
 language: cpp
 sudo: required
 compiler: clang
-matrix:
-  include:
-    - os: osx
-      osx_image: xcode10.2
-addons:
-  apt:
-    sources:
-      - george-edison55-precise-backports
-    packages:
-      - cmake-data
-      - cmake
+os: osx
+osx_image: xcode10.2
 before_install:
 - brew update
 script:
