@@ -1,76 +1,149 @@
-#include "chan.h"
+#ifndef CHAN_H
+#define CHAN_H
+
+#include "buffer.h"
 
 template<typename T>
-void Chan<T>::iterator::next() {
-    bool received = chan_.recv(cur_data_); // TODO: Nick - why doesnt this block?
-    if (!received) {
-        is_end_ = true;
-    }
-}
+class Chan {
+private:
+    Buffer<T> buffer;
+    // queues for waiting senders and receivers, respectively.
+    // using a std::promise object, we pass a value (TODO or an exception if channel is closed),
+    // that is acquired asynchronously by a corresponding std::future object.
+    // a blocking sender needs an address to send its data to, and a blocking receiver needs the data.
+    std::queue<std::pair<std::promise<void>*, T>> send_queue;
+    std::queue<std::promise<T>*> recv_queue;
 
-template<typename T>
-Chan<T>::iterator::iterator(Chan& chan, bool is_end) : chan_(chan), is_end_(is_end) {
-    if (!is_end_) {
-        next();
-    }
-}
+    // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
+    // note that assignment and operator= on cur_size are atomic.
+    std::atomic<bool> is_closed{false};
+    std::mutex chan_lock;
 
-template<typename T>
-T Chan<T>::iterator::operator*() const { return cur_data_; }
+    bool chan_send(const T& src, bool is_blocking);
+    std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
+public:
+    explicit Chan(size_t n = 0);
 
-template<typename T>
-Chan<T>::iterator::iterator& Chan<T>::iterator::operator++() {
-    next();
-    return *this;
-}
+    // Copy constructor
+    Chan(const Chan &c) :
+        buffer(c.buffer),
+        send_queue(c.send_queue),
+        recv_queue(c.recv_queue),
+        is_closed(),
+        chan_lock() {
+            is_closed = c.is_closed.load();
+        }
 
-template<typename T>
-Chan<T>::iterator::bool operator!=(const Chan<T>::iterator::iterator& lhs, const Chan<T>::iterator::iterator& rhs) {
-    return !(lhs == rhs);
-}
+    // Move constructor
+    Chan(Chan &&c) :
+        buffer(std::move(c.buffer)),
+        send_queue(std::move(c.send_queue)),
+        recv_queue(std::move(c.recv_queue)),
+        is_closed(),
+        chan_lock() {
+            is_closed = c.is_closed.exchange(0);
+        }
 
-template<typename T>
-Chan<T>::iterator::iterator Chan<T>::iterator::begin() {
-    return iterator(*this, false);
-}
+    // TODO impl destructor?
 
-template<typename T>
-Chan<T>::iterator::iterator Chan<T>::iterator::end()   {
-    return iterator(*this, true);
-}
+    // blocking send (ex. chan <- 1) does not return a boolean.
+    void send(const T& src);
 
-template<typename T>
-bool operator==(const Chan<T>::iterator::iterator& lhs, const Chan<T>::iterator::iterator& rhs) {
-    if ((lhs.is_end_ == true) && (rhs.is_end_ == true)) {
-        return true;
-    } else {
-        // because we only use iterator to implement for range loop,
-        // we skip the non-end comparison for now.
-        // this is bad, since we are still exposing the iterator.
-        // TODO fix this.
-        return false;
-    }
-}
+    // return value indicates whether the communication succeeded.
+    // the value is true if the value received was delivered by a successful send operation to the channel,
+    // or false if it is a zero value generated because the channel is closed and empty.
+    bool recv(T& dst);
+    // Assignment recv
+    T recv();
 
-template<typename T>
-Chan<T>::Chan(const Chan &c) :
-    buffer(c.buffer),
-    send_queue(c.send_queue),
-    recv_queue(c.recv_queue),
-    is_closed(),
-    chan_lock() {
-        is_closed = c.is_closed.load();
-    }
+    // non-blocking versions of send and recv.
+    // for now, expose the non-blocking versions to the user,
+    // who can combine them in if/else block to simulate the select stmt,
+    // until the select stmt is implemented.
+    // TODO comment return value semantics.
+    // TODO move to private once select stmt added.
+    bool send_nonblocking(const T& src);
+    bool recv_nonblocking(T& dst);
 
-template<typename T>
-Chan<T>::Chan(Chan &&c) :
-    buffer(std::move(c.buffer)),
-    send_queue(std::move(c.send_queue)),
-    recv_queue(std::move(c.recv_queue)),
-    is_closed(),
-    chan_lock() {
-        is_closed = c.is_closed.exchange(0);
-    }
+    void close();
+
+    // a custom iterator to enable the for range loop.
+    // importantly, note that begin() and operator++ modifies the channel by calling its recv().
+    // while we are implementing an iterator for the for range loop only,
+    // this iterator needs to be much more robust, since we are exposing it to user.
+    // TODO any way to hide to user and only use in for range loop?
+    // TODO what is const_iterator? is it useful for us?
+    // TODO move this to a different class/file.
+    class iterator {
+    private:
+        Chan& chan_;  // to call chan.recv().
+        bool is_end_; // indicates whether the iterator has reached the end.
+
+        // cur_data keeps (a copy of) the data that was recv()ed.
+        // cur_data cannot be T&, because at the end (one passed the last), it cannot reference any data.
+        // TODO use pointer and void comparison to eliminate copies.
+        //      But, to do so, we need to construct an empty T, to be passed to recv().
+        T cur_data_;
+
+        // used in both constructor and operator++.
+        // TODO: Throw an error if you try to iterator over an un closed channel
+        void next() {
+            bool received = chan_.recv(cur_data_); // TODO: Nick - why doesnt this block?
+            if (!received) {
+                is_end_ = true;
+            }
+        }
+
+    public:
+        // because std::iterator is deprecated in C++17, need to add the following 5 typedefs.
+        // TODO understand how these typedefs are used.
+        using iterator_category = std::input_iterator_tag;
+        using value_type = T;
+        using difference_type = void; // TODO std::ptrdiff_t;
+        using pointer = T*;
+        using reference = T&;
+
+        // required methods of iterator.
+        // constructor is called by begin() and end() only.
+        iterator(Chan& chan, bool is_end) : chan_(chan), is_end_(is_end) {
+            if (!is_end_) {
+                next();
+            }
+        }
+
+        T operator*() const { return cur_data_; } // TODO beware copy.
+
+        // TODO is operator-> needed?
+
+        // preincrement
+        iterator& operator++() {
+            next();
+            return *this;
+        }
+
+        // TODO postincrement is more tricky.
+
+        friend bool operator==(const iterator& lhs, const iterator& rhs) {
+            if ((lhs.is_end_ == true) && (rhs.is_end_ == true)) {
+                return true;
+            } else {
+                // because we only use iterator to implement for range loop,
+                // we skip the non-end comparison for now.
+                // this is bad, since we are still exposing the iterator.
+                // TODO fix this.
+                return false;
+            }
+        }
+
+        friend bool operator!=(const iterator& lhs, const iterator& rhs) {
+            return !(lhs == rhs);
+        }
+    };
+
+    iterator begin() { return iterator(*this, false); }
+    iterator end()   { return iterator(*this, true); }
+};
+
 
 // TODO understand compiler error: "Explicitly initialize member which does not have a default constructor"
 template<typename T>
@@ -282,3 +355,5 @@ void Chan<T>::close(){
         promise_data_pair.first->set_exception(std::make_exception_ptr(std::exception()));
     }
 }
+
+#endif

@@ -7,6 +7,5 @@ project(CPP-Channels)
 
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/bin)
 
-include_directories(include)
 file(GLOB SOURCES "src/*.cpp")
 add_executable(channels_test ${SOURCES})
