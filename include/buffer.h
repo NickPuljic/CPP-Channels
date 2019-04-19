@@ -14,7 +14,7 @@ private:
     // note that ++, --, operator= on cur_size are atomic.
     std::atomic<size_t> cur_size{0};
 public:
-    explicit Buffer(size_t n) {cap = n;}
+    explicit Buffer(size_t n);
 
     // Copy constructor
     Buffer(const Buffer &b);

@@ -1,7 +1,7 @@
 #include "buffer.h"
 
 template<typename T>
-explicit Buffer<T>::Buffer(size_t n) {
+Buffer<T>::Buffer(size_t n) {
     cap = n;
 }
 
