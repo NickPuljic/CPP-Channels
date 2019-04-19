@@ -5,9 +5,7 @@
 #include <future>
 #include <atomic>
 
-// unlike channels in Go, we modularize buffer management
-// TODO decide if all methods need to be atomic. If so, use a mutex.
-// TODO decide if memory order need to be specified.
+// Unlike channels in Go, we modularize buffer management
 template<typename T>
 class Buffer {
 private:
