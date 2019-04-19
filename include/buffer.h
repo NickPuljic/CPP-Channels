@@ -17,32 +17,22 @@ public:
     explicit Buffer(size_t n) {cap = n;}
 
     // Copy constructor
-    Buffer(const Buffer &b) :
-        q(b.q),
-        cap(b.cap),
-        cur_size() {
-            cur_size = b.cur_size.load();
-        }
+    Buffer(const Buffer &b);
 
     // Move constructor
-    Buffer(Buffer &&b) :
-        q(std::move(b.q)),
-        cap(std::move(b.cap)),
-        cur_size() {
-            cur_size = b.cur_size.exchange(0);
-        }
+    Buffer(Buffer &&b);
 
     // TODO impl ~Buffer() if destructor needed
 
     // Copy push()
-    void push(const T& elem) {q.push(elem); cur_size++;}
+    void push(const T& elem);
     // Move push()
-    void push(T&& elem) {q.push(elem); cur_size++;}
+    void push(T&& elem);
 
-    T& front() {return q.front();}
-    void pop() {q.pop(); cur_size--;}
+    T& front();
+    void pop();
 
-    size_t current_size() {return cur_size.load();}
-    size_t capacity() {return cap;}
-    bool is_full() {return cap == cur_size.load();}
+    size_t current_size();
+    size_t capacity();
+    bool is_full();
 };
