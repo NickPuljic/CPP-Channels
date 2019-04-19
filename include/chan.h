@@ -1,3 +1,5 @@
+#include "buffer.h"
+
 template<typename T>
 class Chan {
 private:

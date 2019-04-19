@@ -1,8 +1,4 @@
-#include <iostream>
-#include <queue>
-#include <future>
-#include <atomic>
-#include "buffer.h"
+#include "chan.h"
 
 template<typename T>
 void Chan<T>::iterator::next() {
