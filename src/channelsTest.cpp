@@ -67,6 +67,7 @@ TEST_CASE("nonblocking send and recive test") {
         // Make sure you can now recv and get correct value
         REQUIRE(c1.recv_nonblocking(r) == true);
         REQUIRE(r == 10);
+        // Make sure the thread ends meaning the send was sucessful
         t1.join();
     }
 }
@@ -125,7 +126,7 @@ TEST_CASE("unbuffered channel") {
 
     SECTION("unbuffered blocking two channels") {
         // Send value to unbuffered channel and block
-        std::thread t1{send_n_to_channel, std::ref(chan), 1};
+        std::thread t1{send_n, std::ref(chan), 8};
         std::this_thread::sleep_for(std::chrono::seconds(1));
         // Should fail if unbuffered channel recv a second time
         std::thread t2{must_stay_blocked, std::ref(chan)};
@@ -133,7 +134,7 @@ TEST_CASE("unbuffered channel") {
 
         // Recv from first block and make sure its correct
         int i = chan.recv();
-        REQUIRE(i == 0);
+        REQUIRE(i == 8);
         t1.join();
         t2.detach();
     }
@@ -154,35 +155,35 @@ TEST_CASE("unbuffered channel") {
 }
 
 TEST_CASE("sending and receiving") {
-    Chan<int> chan = Chan<int>(15);
+    Chan<int> chan = Chan<int>(150);
 
     SECTION("sending and receiving async") {
-        std::thread t1{send_n_to_channel, std::ref(chan), 15};
+        std::thread t1{send_n_to_channel, std::ref(chan), 150};
 
         // Wait for them all to send
         t1.join();
 
-        std::thread t2{recv_n_from_channel, std::ref(chan), 15};
+        std::thread t2{recv_n_from_channel, std::ref(chan), 150};
 
         t2.join();
     }
     SECTION("recv assignment") {
-        std::thread t1{send_n_to_channel, std::ref(chan), 15};
+        std::thread t1{send_n_to_channel, std::ref(chan), 150};
 
         // Wait for them all to send
         t1.join();
 
-        std::thread t2{recv_assignment_n_from_channel, std::ref(chan), 15};
+        std::thread t2{recv_assignment_n_from_channel, std::ref(chan), 150};
 
         t2.join();
     }
     SECTION("receiving first sync") {
-        std::thread t1{recv_n_from_channel, std::ref(chan), 15};
+        std::thread t1{recv_n_from_channel, std::ref(chan), 150};
 
         // Give the recv a second to make sure it is waiting
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        std::thread t2{send_n_to_channel, std::ref(chan), 15};
+        std::thread t2{send_n_to_channel, std::ref(chan), 150};
 
         t2.join();
         t1.join();
@@ -202,8 +203,9 @@ TEST_CASE("sending and receiving") {
         t2.join();
     }
     SECTION("sending first sync") {
-        std::thread t1{send_n_to_channel, std::ref(chan), 15};
-        std::thread t2{recv_n_from_channel, std::ref(chan), 15};
+        std::thread t1{send_n_to_channel, std::ref(chan), 150};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::thread t2{recv_n_from_channel, std::ref(chan), 150};
 
         t1.join();
         t2.join();
@@ -224,11 +226,11 @@ void recv_n_using_for_range(Chan<int>& chan) {
 }
 
 TEST_CASE( "send, close, and recv using for range" ) {
-    Chan<int> chan = Chan<int>(3);
+    Chan<int> chan = Chan<int>(200);
 
     SECTION("send and close then range") {
         // Send 0, 1, 2 to chan and close
-        std::thread t1{send_n_and_close, std::ref(chan), 3};
+        std::thread t1{send_n_and_close, std::ref(chan), 200};
         t1.join();
 
         // Range through channel and make sure it can recv
