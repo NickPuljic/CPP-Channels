@@ -1,8 +1,6 @@
 #define CATCH_CONFIG_MAIN
 #include "libs/catch.hpp"
 #include "main.cpp"
-#include "buffer.h"
-
 
 void send_n_to_channel(Chan<int>& chan, int n) {
     for (int i = 0; i < n; i++) {
