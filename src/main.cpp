@@ -235,7 +235,7 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
         return false;
 
     // scoped_lock can't be used b/c we must .unlock() prior to future.get()
-    std::unique_lock lck{chan_lock};
+    std::unique_lock<std::mutex> lck{chan_lock};
 
     // sending to a closed channel is an error.
     if (is_closed) {
@@ -309,7 +309,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
         return std::pair<bool, bool>(false, false);
     }
 
-    std::unique_lock lck{chan_lock};
+    std::unique_lock<std::mutex> lck{chan_lock};
 
     // else if c is closed, returns (true, false).
     if (is_closed && buffer.current_size() == 0) {
@@ -369,7 +369,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
 
 template<typename T>
 void Chan<T>::close(){
-    std::unique_lock lck{chan_lock};
+    std::unique_lock<std::mutex> lck{chan_lock};
 
     if (is_closed) {
         // TODO organize exceptions.
