@@ -242,3 +242,90 @@ TEST_CASE( "send, close, and recv using for range" ) {
         t1.join();
     }
 }
+
+void send_all(Chan<int>& chan, std::vector<int>& v) {
+    for (auto num : v) {
+        chan.send(num);
+    }
+}
+
+void recv_for_seconds(Chan<int>& chan, std::vector<int>& recver_data, unsigned& seconds) {
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start).count() < seconds) {
+        int num;
+        chan.recv(num); // assumes no close.
+        recver_data.push_back(num);
+    }
+}
+
+void send_and_recv(
+    unsigned chan_size = 0,
+    unsigned n_senders = 3,
+    unsigned n_recvers = 3,
+    unsigned send_upto = 1000,
+    unsigned recv_for  = 5) {
+
+    REQUIRE((n_senders > 0 && n_recvers > 0 && send_upto > 0 && recv_for > 0));
+
+    Chan<int> chan(chan_size);
+
+    // all_sender_vec contains each number in [1,send_upto], uniquely.
+    std::vector<int> all_sender_data(send_upto);
+    std::iota(all_sender_data.begin(), all_sender_data.end(), 1);
+
+    // TODO needed?
+    // shuffle the data.
+    // std::random_shuffle(all_sender_data.begin(), all_sender_data.end());
+
+    // split it equally among (except for last) senders.
+    std::vector<std::vector<int>> each_sender_data;
+    const std::size_t each_sender_data_size = all_sender_data.size() / n_senders;
+    auto begin = all_sender_data.begin();
+    for (auto i = 0; i < n_senders; ++i) {
+        auto end = i == n_senders - 1 ? all_sender_data.end() : begin + each_sender_data_size;
+        each_sender_data.push_back(std::vector<int>(begin, end));
+        begin = end;
+    }
+
+    // n_recvers vectors for recvers to fill.
+    std::vector<std::vector<int>> each_recver_data(
+        n_recvers,
+        std::vector<int>(0));
+
+    // launch all recvers first.
+    // each recveiver will recv everything it can for recv_for seconds.
+    // !!! assumes all sent data will be recved during the given seconds.
+    for (auto i = 0; i < n_recvers; ++i) {
+        std::thread t{recv_for_seconds, std::ref(chan), std::ref(each_recver_data[i]), std::ref(recv_for)};
+        t.detach();
+    }
+
+    // launch all senders.
+    for (auto i = 0; i < n_senders; ++i){
+        std::thread t{send_all, std::ref(chan), std::ref(each_sender_data[i])};
+        t.detach();
+    }
+
+    // !!! assumes this thread sleep until all recvers and senders finish.
+    std::this_thread::sleep_for(std::chrono::seconds(recv_for + 5));
+
+    // merge each_recver_data
+    std::vector<int> all_recver_data;
+    for (auto recver_data : each_recver_data) {
+        // DEBUG
+        // std::cout << recver_data.size() << std::endl;
+        all_recver_data.insert(all_recver_data.end(), recver_data.begin(), recver_data.end());
+    }
+
+    // sort (in case sender data was shuffled above)
+    std::sort(all_recver_data.begin(), all_recver_data.end());
+    std::sort(all_sender_data.begin(), all_sender_data.end());
+
+    REQUIRE(all_recver_data == all_sender_data);
+}
+
+TEST_CASE( "parallel send and recv" ) {
+    send_and_recv();
+}
