@@ -19,24 +19,28 @@ template<typename T>
 T Chan<T>::iterator::operator*() const { return cur_data_; }
 
 template<typename T>
-iterator& Chan<T>::iterator::operator++() {
+Chan<T>::iterator::iterator& Chan<T>::iterator::operator++() {
     next();
     return *this;
 }
 
 template<typename T>
-bool Chan<T>::iterator::operator!=(const iterator& lhs, const iterator& rhs) {
+Chan<T>::iterator::bool operator!=(const Chan<T>::iterator::iterator& lhs, const Chan<T>::iterator::iterator& rhs) {
     return !(lhs == rhs);
 }
 
 template<typename T>
-iterator Chan<T>::iterator::begin() { return iterator(*this, false); }
+Chan<T>::iterator::iterator Chan<T>::iterator::begin() {
+    return iterator(*this, false);
+}
 
 template<typename T>
-iterator Chan<T>::iterator::end()   { return iterator(*this, true); }
+Chan<T>::iterator::iterator Chan<T>::iterator::end()   {
+    return iterator(*this, true);
+}
 
 template<typename T>
-bool Chan<T>::iterator::operator==(const iterator& lhs, const iterator& rhs) {
+bool operator==(const Chan<T>::iterator::iterator& lhs, const Chan<T>::iterator::iterator& rhs) {
     if ((lhs.is_end_ == true) && (rhs.is_end_ == true)) {
         return true;
     } else {
