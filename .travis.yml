@@ -8,4 +8,4 @@ before_install:
 script:
 - cmake -H. -Bbuild
 - cmake --build build
-- for i in bin/*; leaks -atExit -- do ./$i; done
+- for i in bin/*; do ./$i; done
