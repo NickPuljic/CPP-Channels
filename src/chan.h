@@ -7,15 +7,15 @@ template<typename T>
 class Chan {
 private:
     Buffer<T> buffer;
-    // queues for waiting senders and receivers, respectively.
-    // using a std::promise object, we pass a value (TODO or an exception if channel is closed),
-    // that is acquired asynchronously by a corresponding std::future object.
-    // a blocking sender needs an address to send its data to, and a blocking receiver needs the data.
+    // queues for waiting senders and receivers, respectively
+    // using a std::promise object, we pass a value,
+    // that is acquired asynchronously by a corresponding std::future object
+    // a blocking sender needs an address to send its data to, and a blocking receiver needs the data
     std::queue<std::pair<std::promise<void>*, T>> send_queue;
     std::queue<std::promise<T>*> recv_queue;
 
     // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
-    // note that assignment and operator= on cur_size are atomic.
+    // note that assignment and operator= on cur_size are atomic
     std::atomic<bool> is_closed{false};
     std::mutex chan_lock;
 
@@ -25,33 +25,17 @@ public:
     explicit Chan(size_t n = 0);
 
     // Copy constructor
-    Chan(const Chan &c) :
-        buffer(c.buffer),
-        send_queue(c.send_queue),
-        recv_queue(c.recv_queue),
-        is_closed(),
-        chan_lock() {
-            is_closed = c.is_closed.load();
-        }
+    Chan(const Chan &c);
 
     // Move constructor
-    Chan(Chan &&c) :
-        buffer(std::move(c.buffer)),
-        send_queue(std::move(c.send_queue)),
-        recv_queue(std::move(c.recv_queue)),
-        is_closed(),
-        chan_lock() {
-            is_closed = c.is_closed.exchange(0);
-        }
+    Chan(Chan &&c);
 
-    // TODO impl destructor?
-
-    // blocking send (ex. chan <- 1) does not return a boolean.
+    // blocking send (ex. chan <- 1) does not return a boolean
     void send(const T& src);
 
-    // return value indicates whether the communication succeeded.
+    // return value indicates whether the communication succeeded
     // the value is true if the value received was delivered by a successful send operation to the channel,
-    // or false if it is a zero value generated because the channel is closed and empty.
+    // or false if it is a zero value generated because the channel is closed and empty
     bool recv(T& dst);
     // Assignment recv
     T recv();
@@ -65,14 +49,13 @@ public:
     bool send_nonblocking(const T& src);
     bool recv_nonblocking(T& dst);
 
+    // Prevent sending to the channel
     void close();
 
     // a custom iterator to enable the for range loop.
     // importantly, note that begin() and operator++ modifies the channel by calling its recv().
     // while we are implementing an iterator for the for range loop only,
     // this iterator needs to be much more robust, since we are exposing it to user.
-    // TODO any way to hide to user and only use in for range loop?
-    // TODO what is const_iterator? is it useful for us?
     // TODO move this to a different class/file.
     class iterator {
     private:
@@ -88,7 +71,7 @@ public:
         // used in both constructor and operator++.
         // TODO: Throw an error if you try to iterator over an un closed channel
         void next() {
-            bool received = chan_.recv(cur_data_); // TODO: Nick - why doesnt this block?
+            bool received = chan_.recv(cur_data_);
             if (!received) {
                 is_end_ = true;
             }
@@ -96,7 +79,6 @@ public:
 
     public:
         // because std::iterator is deprecated in C++17, need to add the following 5 typedefs.
-        // TODO understand how these typedefs are used.
         using iterator_category = std::input_iterator_tag;
         using value_type = T;
         using difference_type = void; // TODO std::ptrdiff_t;
@@ -144,10 +126,28 @@ public:
     iterator end()   { return iterator(*this, true); }
 };
 
-
-// TODO understand compiler error: "Explicitly initialize member which does not have a default constructor"
 template<typename T>
 Chan<T>::Chan(size_t n) : buffer(n) {};
+
+template<typename T>
+Chan<T>::Chan(const Chan &c) :
+    buffer(c.buffer),
+    send_queue(c.send_queue),
+    recv_queue(c.recv_queue),
+    is_closed(),
+    chan_lock() {
+        is_closed = c.is_closed.load();
+    }
+
+template<typename T>
+Chan<T>::Chan(Chan &&c) :
+    buffer(std::move(c.buffer)),
+    send_queue(std::move(c.send_queue)),
+    recv_queue(std::move(c.recv_queue)),
+    is_closed(),
+    chan_lock() {
+        is_closed = c.is_closed.exchange(0);
+    }
 
 template<typename T>
 void Chan<T>::send(const T& src) {
@@ -180,10 +180,7 @@ bool Chan<T>::recv_nonblocking(T& dst) {
 
 template<typename T>
 bool Chan<T>::chan_send(const T& src, bool is_blocking) {
-    // TODO can "this" chan be null, or is this Go-specific? see if c == nil ... in chansend().
-
     // Fast path: check for failed non-blocking operation without acquiring the lock.
-    // TODO read chan.go's notes on single-word read optimization here. can do same using Buffer class?
     if (!is_blocking
         && !is_closed
         && ((buffer.capacity() == 0 && recv_queue.empty()) || (buffer.capacity() > 0 && buffer.is_full())))
@@ -224,8 +221,7 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // block on the channel. Some receiver will complete our operation for us.
     std::promise<void> promise;
     std::future<void> future = promise.get_future();
-    // TODO explain why pair; cannot memcpy handle.
-    // TODO change pair to struct/class. beware of multiple copies here.
+
     std::pair<std::promise<void>*, T> promise_data_pair(&promise, src);
     send_queue.push(promise_data_pair);
 
@@ -238,19 +234,14 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     return true;
 }
 
-
 // receives on channel c and writes the received data to dst.
 // if not blocking and no elements are available, returns (false, false).
-// else if c is closed, zeros dst and returns (true, false). TODO why zero dst?
+// else if c is closed, zeros dst and returns (true, false).
 // else, fills in dst with an element and returns (true, true).
 // A non-nil dst must refer to the heap or the caller's stack.
 // two bools in a pair are (selected, received).
-// TODO pair to struct/class.
-// TODO dst may be nil, in which case received data is ignored.
 template<typename T>
 std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
-    // TODO can "this" chan be null, or is this Go-specific? see chanrecv().
-
     // from chan.go:
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     // The order of operations is important here: reversing the operations can lead to
