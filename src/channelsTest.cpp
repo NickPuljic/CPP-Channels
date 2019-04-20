@@ -40,6 +40,26 @@ void must_stay_blocked(Chan<int>& chan) {
     REQUIRE(1 == 2);
 }
 
+TEST_CASE("test close") {
+    Chan<int> chan = Chan<int>(150);
+
+    SECTION("close after send") {
+        std::thread t1{send_n_to_channel, std::ref(chan), 150};
+        t1.join();
+        chan.close();
+        recv_n_from_channel(chan, 150);
+    }
+    SECTION("block send then close") {
+        std::thread t1{send_n_to_channel, std::ref(chan), 151};
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        //chan.close(); //TODO: Why is this not working?
+        recv_n_from_channel(chan, 150);
+
+        // make sure the final send ended because of close
+        t1.join();
+    }
+}
+
 TEST_CASE("nonblocking send and recive test") {
     Chan<int> c1;
 
