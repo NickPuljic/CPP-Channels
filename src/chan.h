@@ -3,6 +3,8 @@
 
 #include "buffer.h"
 
+#include <functional>
+
 template<typename T>
 class Chan {
 private:
@@ -49,81 +51,12 @@ public:
     bool send_nonblocking(const T& src);
     bool recv_nonblocking(T& dst);
 
+    // for-each semantics
+    void foreach(std::function<void(T)> f);
+
     // Prevent sending to the channel
     void close();
 
-    // a custom iterator to enable the for range loop.
-    // importantly, note that begin() and operator++ modifies the channel by calling its recv().
-    // while we are implementing an iterator for the for range loop only,
-    // this iterator needs to be much more robust, since we are exposing it to user.
-    // TODO move this to a different class/file.
-    class iterator {
-    private:
-        Chan& chan_;  // to call chan.recv().
-        bool is_end_; // indicates whether the iterator has reached the end.
-
-        // cur_data keeps (a copy of) the data that was recv()ed.
-        // cur_data cannot be T&, because at the end (one passed the last), it cannot reference any data.
-        // TODO use pointer and void comparison to eliminate copies.
-        //      But, to do so, we need to construct an empty T, to be passed to recv().
-        T cur_data_;
-
-        // used in both constructor and operator++.
-        // TODO: Throw an error if you try to iterator over an un closed channel
-        void next() {
-            bool received = chan_.recv(cur_data_);
-            if (!received) {
-                is_end_ = true;
-            }
-        }
-
-    public:
-        // because std::iterator is deprecated in C++17, need to add the following 5 typedefs.
-        using iterator_category = std::input_iterator_tag;
-        using value_type = T;
-        using difference_type = void; // TODO std::ptrdiff_t;
-        using pointer = T*;
-        using reference = T&;
-
-        // required methods of iterator.
-        // constructor is called by begin() and end() only.
-        iterator(Chan& chan, bool is_end) : chan_(chan), is_end_(is_end) {
-            if (!is_end_) {
-                next();
-            }
-        }
-
-        T operator*() const { return cur_data_; } // TODO beware copy.
-
-        // TODO is operator-> needed?
-
-        // preincrement
-        iterator& operator++() {
-            next();
-            return *this;
-        }
-
-        // TODO postincrement is more tricky.
-
-        friend bool operator==(const iterator& lhs, const iterator& rhs) {
-            if ((lhs.is_end_ == true) && (rhs.is_end_ == true)) {
-                return true;
-            } else {
-                // because we only use iterator to implement for range loop,
-                // we skip the non-end comparison for now.
-                // this is bad, since we are still exposing the iterator.
-                // TODO fix this.
-                return false;
-            }
-        }
-
-        friend bool operator!=(const iterator& lhs, const iterator& rhs) {
-            return !(lhs == rhs);
-        }
-    };
-
-    iterator begin() { return iterator(*this, false); }
-    iterator end()   { return iterator(*this, true); }
 };
 
 template<typename T>
@@ -312,6 +245,15 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     return std::pair<bool, bool>(true, !is_closed);
 }
 
+template<typename T>
+void Chan<T>::foreach(std::function<void(T)> f){
+    T cur_data;
+    bool received = recv(cur_data);
+    while (received) {
+        f(cur_data);
+        received = recv(cur_data);
+    }
+}
 
 template<typename T>
 void Chan<T>::close(){
