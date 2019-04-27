@@ -6,17 +6,17 @@ import (
 )
 
 func main() {
-    unbufferedChannel := make(chan string)
+    unbufferedChannel := make(chan int)
 
     start := time.Now()
 
+    for n := 0; n < 50000; n++ {
+        go func() { unbufferedChannel <- 0 }()
 
-    for n := 0; n < 5000000; n++ {
-        go func() { unbufferedChannel <- "measurement" }()
-
-        <-unbufferedChannel
+        <- unbufferedChannel
     }
 
     elapsed := time.Since(start)
+
     log.Printf("Program took %s", elapsed)
 }

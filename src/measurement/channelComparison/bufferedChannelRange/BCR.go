@@ -3,26 +3,27 @@ package main
 import (
     "log"
     "time"
-    "math/rand"
+    //"math/rand"
 )
 
 func main() {
+    i := 20
+
     start := time.Now()
 
-
     for n := 0; n < 500000; n++ {
-        i := rand.Intn(99) + 1
+        //i := rand.Intn(99) + 1
 
-        bufferedChannel := make(chan string, i)
+        bufferedChannel := make(chan int, i)
 
         for m := 0; m < i; m++ {
-            bufferedChannel <- "measurement"
+            bufferedChannel <- 0
         }
 
         close(bufferedChannel)
 
-        for _ = range bufferedChannel {
-          continue
+        for ele := range bufferedChannel {
+          _ = ele
         }
     }
 
