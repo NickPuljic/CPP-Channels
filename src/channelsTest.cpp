@@ -40,24 +40,94 @@ void must_stay_blocked(Chan<int>& chan) {
     REQUIRE(1 == 2);
 }
 
-TEST_CASE("test close") {
-    Chan<int> chan = Chan<int>(150);
+void send_n_and_close(Chan<int>& chan, int n) {
+    send_n_to_channel(chan, n);
+    chan.close();
+}
 
-    SECTION("close after send") {
-        std::thread t1{send_n_to_channel, std::ref(chan), 150};
-        t1.join();
-        chan.close();
-        recv_n_from_channel(chan, 150);
-    }
-    SECTION("block send then close") {
-        std::thread t1{send_n_to_channel, std::ref(chan), 151};
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        //chan.close(); //TODO: Why is this not working?
-        recv_n_from_channel(chan, 150);
+void recv_n_using_foreach(Chan<int>& chan) {
+    int i = 0;
+    chan.foreach([=](int num) mutable {
+        REQUIRE(num == i);
+        ++i;
+    });
+}
 
-        // make sure the final send ended because of close
-        t1.join();
+void send_all(Chan<int>& chan, std::vector<int>& v) {
+    for (auto num : v) {
+        chan.send(num);
     }
+}
+
+void recv_for_seconds(Chan<int>& chan, std::vector<int>& recver_data, unsigned& seconds) {
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start).count() < seconds) {
+        int num;
+        chan.recv(num); // assumes no close.
+        recver_data.push_back(num);
+    }
+}
+
+void send_and_recv(
+    unsigned chan_size = 0,
+    unsigned n_senders = 3,
+    unsigned n_recvers = 3,
+    unsigned send_upto = 1000,
+    unsigned recv_for  = 5) {
+
+    REQUIRE((n_senders > 0 && n_recvers > 0 && send_upto > 0 && recv_for > 0));
+
+    Chan<int> chan(chan_size);
+
+    // all_sender_vec contains each number in [1,send_upto], uniquely.
+    std::vector<int> all_sender_data(send_upto);
+    std::iota(all_sender_data.begin(), all_sender_data.end(), 1);
+
+    // split it equally among (except for last) senders.
+    std::vector<std::vector<int>> each_sender_data;
+    const std::size_t each_sender_data_size = all_sender_data.size() / n_senders;
+    auto begin = all_sender_data.begin();
+    for (auto i = 0; i < n_senders; ++i) {
+        auto end = i == n_senders - 1 ? all_sender_data.end() : begin + each_sender_data_size;
+        each_sender_data.push_back(std::vector<int>(begin, end));
+        begin = end;
+    }
+
+    // n_recvers vectors for recvers to fill.
+    std::vector<std::vector<int>> each_recver_data(
+        n_recvers,
+        std::vector<int>(0));
+
+    // launch all recvers first.
+    // each recveiver will recv everything it can for recv_for seconds.
+    // assumes all sent data will be recved during the given seconds.
+    for (auto i = 0; i < n_recvers; ++i) {
+        std::thread t{recv_for_seconds, std::ref(chan), std::ref(each_recver_data[i]), std::ref(recv_for)};
+        t.detach();
+    }
+
+    // launch all senders.
+    for (auto i = 0; i < n_senders; ++i){
+        std::thread t{send_all, std::ref(chan), std::ref(each_sender_data[i])};
+        t.detach();
+    }
+
+    // assumes this thread sleeps until all recvers and senders finish.
+    std::this_thread::sleep_for(std::chrono::seconds(recv_for + 5));
+
+    // merge each_recver_data
+    std::vector<int> all_recver_data;
+    for (auto recver_data : each_recver_data) {
+        all_recver_data.insert(all_recver_data.end(), recver_data.begin(), recver_data.end());
+    }
+
+    // sort
+    std::sort(all_recver_data.begin(), all_recver_data.end());
+    std::sort(all_sender_data.begin(), all_sender_data.end());
+
+    REQUIRE(all_recver_data == all_sender_data);
 }
 
 TEST_CASE("nonblocking send and recive test") {
@@ -210,7 +280,7 @@ TEST_CASE("sending and receiving") {
     }
     SECTION("receiving twice first sync") {
         std::thread t1{recv_n, std::ref(chan), 0};
-        // Give the rec a second to wait
+        // Give the rec a second
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
         std::thread t2{recv_n, std::ref(chan), 1};
@@ -232,19 +302,6 @@ TEST_CASE("sending and receiving") {
     }
 }
 
-void send_n_and_close(Chan<int>& chan, int n) {
-    send_n_to_channel(chan, n);
-    chan.close();
-}
-
-void recv_n_using_foreach(Chan<int>& chan) {
-    int i = 0;
-    chan.foreach([=](int num) mutable {
-        REQUIRE(num == i);
-        ++i;
-    });
-}
-
 TEST_CASE( "send, close, and recv using for range" ) {
     Chan<int> chan = Chan<int>(200);
 
@@ -253,98 +310,26 @@ TEST_CASE( "send, close, and recv using for range" ) {
         std::thread t1{send_n_and_close, std::ref(chan), 200};
         t1.join();
 
-        // Range through channel and make sure it can recv
+        // foreach through channel and make sure it can recv
         std::thread t2{recv_n_using_foreach, std::ref(chan)};
         t2.join();
     }
-    SECTION("for loop should have nothing") {
+    SECTION("foreach should have nothing with empty channel") {
         chan.close();
         std::thread t1{recv_n_using_foreach, std::ref(chan)};
         t1.join();
     }
 }
 
-void send_all(Chan<int>& chan, std::vector<int>& v) {
-    for (auto num : v) {
-        chan.send(num);
+TEST_CASE("test close") {
+    Chan<int> chan = Chan<int>(150);
+
+    SECTION("close after send") {
+        std::thread t1{send_n_to_channel, std::ref(chan), 150};
+        t1.join();
+        chan.close();
+        recv_n_from_channel(chan, 150);
     }
-}
-
-void recv_for_seconds(Chan<int>& chan, std::vector<int>& recver_data, unsigned& seconds) {
-
-    auto start = std::chrono::high_resolution_clock::now();
-
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start).count() < seconds) {
-        int num;
-        chan.recv(num); // assumes no close.
-        recver_data.push_back(num);
-    }
-}
-
-void send_and_recv(
-    unsigned chan_size = 0,
-    unsigned n_senders = 3,
-    unsigned n_recvers = 3,
-    unsigned send_upto = 1000,
-    unsigned recv_for  = 5) {
-
-    REQUIRE((n_senders > 0 && n_recvers > 0 && send_upto > 0 && recv_for > 0));
-
-    Chan<int> chan(chan_size);
-
-    // all_sender_vec contains each number in [1,send_upto], uniquely.
-    std::vector<int> all_sender_data(send_upto);
-    std::iota(all_sender_data.begin(), all_sender_data.end(), 1);
-
-    // TODO needed?
-    // shuffle the data.
-    // std::random_shuffle(all_sender_data.begin(), all_sender_data.end());
-
-    // split it equally among (except for last) senders.
-    std::vector<std::vector<int>> each_sender_data;
-    const std::size_t each_sender_data_size = all_sender_data.size() / n_senders;
-    auto begin = all_sender_data.begin();
-    for (auto i = 0; i < n_senders; ++i) {
-        auto end = i == n_senders - 1 ? all_sender_data.end() : begin + each_sender_data_size;
-        each_sender_data.push_back(std::vector<int>(begin, end));
-        begin = end;
-    }
-
-    // n_recvers vectors for recvers to fill.
-    std::vector<std::vector<int>> each_recver_data(
-        n_recvers,
-        std::vector<int>(0));
-
-    // launch all recvers first.
-    // each recveiver will recv everything it can for recv_for seconds.
-    // !!! assumes all sent data will be recved during the given seconds.
-    for (auto i = 0; i < n_recvers; ++i) {
-        std::thread t{recv_for_seconds, std::ref(chan), std::ref(each_recver_data[i]), std::ref(recv_for)};
-        t.detach();
-    }
-
-    // launch all senders.
-    for (auto i = 0; i < n_senders; ++i){
-        std::thread t{send_all, std::ref(chan), std::ref(each_sender_data[i])};
-        t.detach();
-    }
-
-    // !!! assumes this thread sleep until all recvers and senders finish.
-    std::this_thread::sleep_for(std::chrono::seconds(recv_for + 5));
-
-    // merge each_recver_data
-    std::vector<int> all_recver_data;
-    for (auto recver_data : each_recver_data) {
-        // DEBUG
-        // std::cout << recver_data.size() << std::endl;
-        all_recver_data.insert(all_recver_data.end(), recver_data.begin(), recver_data.end());
-    }
-
-    // sort (in case sender data was shuffled above)
-    std::sort(all_recver_data.begin(), all_recver_data.end());
-    std::sort(all_sender_data.begin(), all_sender_data.end());
-
-    REQUIRE(all_recver_data == all_sender_data);
 }
 
 TEST_CASE( "parallel send and recv" ) {
