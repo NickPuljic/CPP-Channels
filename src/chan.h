@@ -37,8 +37,12 @@ private:
     // queues for waiting senders and receivers, respectively
     // using a std::promise object, we pass a value,
     // that is acquired asynchronously by a corresponding std::future object
-    std::queue<std::pair<std::promise<void>*, T>> send_queue;
-    std::queue<std::promise<T>*> recv_queue;
+    
+    // std::queue<std::pair<std::promise<void>*, T>> send_queue;
+    // std::queue<std::promise<T>*> recv_queue;
+    std::queue<std::promise<void>> send_queue;
+    std::queue<std::promise<T>> recv_queue;
+    std::queue<T> send_data_queue;
 
     // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
     // note that assignment and operator= on cur_size are atomic
@@ -84,6 +88,7 @@ public:
 template<typename T>
 Chan<T>::Chan(size_t n) : buffer(n) {};
 
+/*
 template<typename T>
 Chan<T>::Chan(const Chan &c) :
     buffer(c.buffer),
@@ -103,6 +108,7 @@ Chan<T>::Chan(Chan &&c) :
     chan_lock() {
         is_closed = c.is_closed.exchange(0);
     }
+*/
 
 template<typename T>
 void Chan<T>::send(const T& src) {
@@ -135,14 +141,14 @@ bool Chan<T>::recv_nonblocking(T& dst) {
 
 template<typename T>
 bool Chan<T>::chan_send(const T& src, bool is_blocking) {
+    // scoped_lock can't be used b/c we must .unlock() prior to future.get()
+    std::unique_lock<std::mutex> lck{chan_lock};
+
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     if (!is_blocking
         && !is_closed
         && ((buffer.capacity() == 0 && recv_queue.empty()) || (buffer.capacity() > 0 && buffer.is_full())))
         return false;
-
-    // scoped_lock can't be used b/c we must .unlock() prior to future.get()
-    std::unique_lock<std::mutex> lck{chan_lock};
 
     // sending to a closed channel is an error.
     if (is_closed) {
@@ -154,11 +160,13 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // bypassing the buffer (if any).
     if (!recv_queue.empty()) {
         // Get the first promise pointer on the queue
-        std::promise<T>* promise_ptr = recv_queue.front();
-        recv_queue.pop();
+        //std::promise<T>* promise_ptr = recv_queue.front();
 
         // give the promise the value of src
-        promise_ptr->set_value(src);
+        //promise_ptr->set_value(src);
+        recv_queue.front().set_value(src);
+        recv_queue.pop();
+
         return true;
     }
 
@@ -177,8 +185,10 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     std::promise<void> promise;
     std::future<void> future = promise.get_future();
 
-    std::pair<std::promise<void>*, T> promise_data_pair(&promise, src);
-    send_queue.push(promise_data_pair);
+    //std::pair<std::promise<void>*, T> promise_data_pair(&promise, src);
+    //send_queue.push(promise_data_pair);
+    send_queue.push(std::move(promise));
+    send_data_queue.push(src);
 
     lck.unlock();
 
@@ -197,6 +207,8 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
 // two bools in a pair are (selected, received).
 template<typename T>
 std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
+    std::unique_lock<std::mutex> lck{chan_lock};
+    
     // from chan.go:
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     // The order of operations is important here: reversing the operations can lead to
@@ -210,8 +222,6 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
         return std::pair<bool, bool>(false, false);
     }
 
-    std::unique_lock<std::mutex> lck{chan_lock};
-
     // else if c is closed, returns (true, false).
     if (is_closed && buffer.current_size() == 0) {
         return std::pair<bool, bool>(true, false);
@@ -223,17 +233,22 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // (both map to the same buffer slot because the queue (buffer) is full,
     // i.e. if buffer was not full, no sender would be waiting)
     if (!send_queue.empty()) {
-        std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front(); // TODO beware mem
-        send_queue.pop();
-
+        //std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front(); // TODO beware mem
+        
         if (buffer.capacity() == 0) {
-            dst = promise_data_pair.second; // TODO beware mem
+            //dst = promise_data_pair.second; // TODO beware mem
+            dst = send_data_queue.front();
         } else {
             dst = buffer.front(); // TODO beware mem
+            buffer.push(send_data_queue.front());
             buffer.pop();
-            buffer.push(promise_data_pair.second);
         }
-        promise_data_pair.first->set_value(); // sender is unblocked.
+
+        send_queue.front().set_value(); // sender is unblocked.
+
+        send_data_queue.pop();
+        send_queue.pop();
+
         return std::pair<bool, bool>(true, true);
     }
 
@@ -252,7 +267,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // block on the channel.
     std::promise<T> promise;
     std::future<T> future = promise.get_future();
-    recv_queue.push(&promise);
+    recv_queue.push(std::move(promise));
 
     lck.unlock();
 
@@ -282,7 +297,6 @@ void Chan<T>::close(){
     std::unique_lock<std::mutex> lck{chan_lock};
 
     if (is_closed) {
-        // TODO organize exceptions.
         throw CloseOfClosedChannelException();
     }
 
@@ -290,21 +304,25 @@ void Chan<T>::close(){
 
     // release all receivers.
     while (!recv_queue.empty()) {
-        std::promise<T>* promise_ptr = recv_queue.front();
-        recv_queue.pop();
+        //std::promise<T>* promise_ptr = recv_queue.front();
+        
         // instead of passing some data indicating close() to the future, pass exception for clarity.
         // the waiting receiver should handle this exception.
         // TODO undo exception + try/catch and send pair of data.
-        promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
+        recv_queue.front().set_exception(std::make_exception_ptr(std::exception()));
+        recv_queue.pop();
     }
 
     // release all senders.
     // By Go semantics, senders should throw exception to users.
     while (!send_queue.empty()) {
-        std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
-        send_queue.pop();
+        //std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
+        
         // the waiting sender should rethrow this exception.
-        promise_data_pair.first->set_exception(std::make_exception_ptr(ChannelClosedDuringSendException()));
+        send_queue.front().set_exception(std::make_exception_ptr(ChannelClosedDuringSendException()));
+
+        send_data_queue.pop();
+        send_queue.pop();
     }
 }
 
