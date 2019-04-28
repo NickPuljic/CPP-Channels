@@ -13,7 +13,7 @@ private:
     // using a std::promise object, we pass a value,
     // that is acquired asynchronously by a corresponding std::future object
     std::queue<std::pair<std::promise<void>*, T>> send_queue;
-    std::queue<std::promise<T>*> recv_queue;
+    std::queue<std::promise<T>> recv_queue;
 
     // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
     // note that assignment and operator= on cur_size are atomic
@@ -59,6 +59,7 @@ public:
 template<typename T>
 Chan<T>::Chan(size_t n) : buffer(n) {};
 
+/*
 template<typename T>
 Chan<T>::Chan(const Chan &c) :
     buffer(c.buffer),
@@ -68,6 +69,7 @@ Chan<T>::Chan(const Chan &c) :
     chan_lock() {
         is_closed = c.is_closed.load();
     }
+*/
 
 template<typename T>
 Chan<T>::Chan(Chan &&c) :
@@ -129,11 +131,11 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // bypassing the buffer (if any).
     if (!recv_queue.empty()) {
         // Get the first promise pointer on the queue
-        std::promise<T>* promise_ptr = recv_queue.front();
+        std::promise<T>& promise_ptr = recv_queue.front();
         recv_queue.pop();
 
         // give the promise the value of src
-        promise_ptr->set_value(src);
+        promise_ptr.set_value(src);
         return true;
     }
 
@@ -227,7 +229,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // block on the channel.
     std::promise<T> promise;
     std::future<T> future = promise.get_future();
-    recv_queue.push(&promise);
+    recv_queue.push(std::move(promise));
 
     lck.unlock();
 
@@ -265,12 +267,12 @@ void Chan<T>::close(){
 
     // release all receivers.
     while (!recv_queue.empty()) {
-        std::promise<T>* promise_ptr = recv_queue.front();
+        std::promise<T>& promise_ptr = recv_queue.front();
         recv_queue.pop();
         // instead of passing some data indicating close() to the future, pass exception for clarity.
         // the waiting receiver should handle this exception.
         // TODO organize exceptions.
-        promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
+        promise_ptr.set_exception(std::make_exception_ptr(std::exception()));
     }
 
     // release all senders.

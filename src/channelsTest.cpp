@@ -141,8 +141,15 @@ TEST_CASE("nonblocking send and recive test") {
         std::thread t1{recv_n, std::ref(c1), 10};
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
+        std::cout << "11111" << std::endl;
+
         // Send 10 nonblocking and make sure it succeeds
-        REQUIRE(c1.send_nonblocking(10) == true);
+        auto tf = c1.send_nonblocking(10);
+        
+        std::cout << "22222" << tf << std::endl;
+        
+        REQUIRE(tf == true);
+        
         t1.join();
     }
     SECTION("test nonblocking recv") {
@@ -187,6 +194,7 @@ TEST_CASE("copy and move constructors") {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         t5.detach();
     }
+    /*
     SECTION("test copy constructor") {
         // Send c1 int 5 and 7
         std::thread t1{send_n, std::ref(c1), 5};
@@ -209,6 +217,7 @@ TEST_CASE("copy and move constructors") {
         std::thread t6{recv_n, std::ref(c1), 7};
         t6.join();
     }
+    */
 }
 
 TEST_CASE("unbuffered channel") {
