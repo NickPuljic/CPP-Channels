@@ -4,6 +4,15 @@
 #include "buffer.h"
 
 #include <functional>
+#include <exception>
+
+class ChannelClosedException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* ChannelClosedException::what() const noexcept {
+    return "While waiting to recv(), the channel was closed by another thread.";
+}
 
 template<typename T>
 class Chan {
@@ -269,7 +278,7 @@ void Chan<T>::close(){
         recv_queue.pop();
         // instead of passing some data indicating close() to the future, pass exception for clarity.
         // the waiting receiver should handle this exception.
-        // TODO organize exceptions.
+        // TODO undo exception + try/catch and send pair of data.
         promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
     }
 
@@ -279,8 +288,7 @@ void Chan<T>::close(){
         std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
         send_queue.pop();
         // the waiting sender should rethrow this exception.
-        // TODO organize exceptions.
-        promise_data_pair.first->set_exception(std::make_exception_ptr(std::exception()));
+        promise_data_pair.first->set_exception(std::make_exception_ptr(ChannelClosedException()));
     }
 }
 
