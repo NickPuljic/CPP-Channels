@@ -6,12 +6,28 @@
 #include <functional>
 #include <exception>
 
-class ChannelClosedException : public std::exception {
+class ChannelClosedDuringSendException : public std::exception {
     const char* what() const noexcept override;
 };
 
-const char* ChannelClosedException::what() const noexcept {
-    return "While waiting to recv(), the channel was closed by another thread.";
+const char* ChannelClosedDuringSendException::what() const noexcept {
+    return "While waiting to send, the channel was closed by another thread.";
+}
+
+class SendOnClosedChannelException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* SendOnClosedChannelException::what() const noexcept {
+    return "send on closed channel";
+}
+
+class CloseOfClosedChannelException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* CloseOfClosedChannelException::what() const noexcept {
+    return "close of closed channel";
 }
 
 template<typename T>
@@ -130,7 +146,7 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
 
     // sending to a closed channel is an error.
     if (is_closed) {
-        throw "send on closed channel"; // TODO error type.
+        throw SendOnClosedChannelException();
     }
 
     // if a waiting receiver exists,
@@ -267,7 +283,7 @@ void Chan<T>::close(){
 
     if (is_closed) {
         // TODO organize exceptions.
-        throw "cannot close a closed channel";
+        throw CloseOfClosedChannelException();
     }
 
     is_closed = true;
@@ -288,7 +304,7 @@ void Chan<T>::close(){
         std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
         send_queue.pop();
         // the waiting sender should rethrow this exception.
-        promise_data_pair.first->set_exception(std::make_exception_ptr(ChannelClosedException()));
+        promise_data_pair.first->set_exception(std::make_exception_ptr(ChannelClosedDuringSendException()));
     }
 }
 
