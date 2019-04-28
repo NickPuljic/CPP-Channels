@@ -12,7 +12,6 @@ private:
     // queues for waiting senders and receivers, respectively
     // using a std::promise object, we pass a value,
     // that is acquired asynchronously by a corresponding std::future object
-    // a blocking sender needs an address to send its data to, and a blocking receiver needs the data
     std::queue<std::pair<std::promise<void>*, T>> send_queue;
     std::queue<std::promise<T>*> recv_queue;
 
@@ -43,11 +42,9 @@ public:
     T recv();
 
     // non-blocking versions of send and recv.
-    // for now, expose the non-blocking versions to the user,
-    // who can combine them in if/else block to simulate the select stmt,
-    // until the select stmt is implemented.
-    // TODO comment return value semantics.
-    // TODO move to private once select stmt added.
+    // we expose the non-blocking versions to the user,
+    // who can combine them in if/else block to simulate the select stmt.
+    // the return values indicate whether the send or recv was successful.
     bool send_nonblocking(const T& src);
     bool recv_nonblocking(T& dst);
 
@@ -267,13 +264,11 @@ void Chan<T>::close(){
     is_closed = true;
 
     // release all receivers.
-    // TODO WHY? by invariant?
     while (!recv_queue.empty()) {
         std::promise<T>* promise_ptr = recv_queue.front();
         recv_queue.pop();
         // instead of passing some data indicating close() to the future, pass exception for clarity.
         // the waiting receiver should handle this exception.
-        // TODO consider passing a zero-ed T.
         // TODO organize exceptions.
         promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
     }
