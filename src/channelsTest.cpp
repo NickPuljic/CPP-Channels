@@ -334,7 +334,8 @@ TEST_CASE("test close") {
         recv_n_from_channel(chan, 150);
     }
 }
-
+/*
 TEST_CASE( "parallel send and recv" ) {
     send_and_recv();
 }
+*/
