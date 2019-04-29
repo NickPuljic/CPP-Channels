@@ -161,7 +161,7 @@ TEST_CASE("nonblocking send and recive test") {
         t1.join();
     }
 }
-/*
+
 TEST_CASE("copy and move constructors") {
     Chan<int> c1(5);
 
@@ -182,10 +182,10 @@ TEST_CASE("copy and move constructors") {
         t4.join();
 
         // Check if 5 is still in c1 (it shouldnt be)
-        std::thread t5{recv_n, std::ref(c1), -1};
+        // std::thread t5{recv_n, std::ref(c1), -1};
         // Give t5 1 second to execute then detatch
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        t5.detach();
+        // std::this_thread::sleep_for(std::chrono::seconds(1));
+        // t5.detach();
     }
     SECTION("test copy constructor") {
         // Send c1 int 5 and 7
@@ -204,19 +204,20 @@ TEST_CASE("copy and move constructors") {
         t4.join();
 
         // Check that c1 also has 5 and 7
-        std::thread t5{recv_n, std::ref(c1), 5};
-        t5.join();
-        std::thread t6{recv_n, std::ref(c1), 7};
-        t6.join();
+        // std::thread t5{recv_n, std::ref(c1), 5};
+        // t5.join();
+        // std::thread t6{recv_n, std::ref(c1), 7};
+        // t6.join();
     }
 }
-*/
+
 TEST_CASE("unbuffered channel") {
     SECTION("unbuffered blocking two channels") {
         Chan<int> chan;
         // Send value to unbuffered channel and block
         std::thread t1{send_n, std::ref(chan), 8};
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        // throws exception because ChanData destructor is not yet implemented.
         // Should fail if unbuffered channel recv a second time
         // std::thread t2{must_stay_blocked, std::ref(chan)};
         // std::this_thread::sleep_for(std::chrono::seconds(1));

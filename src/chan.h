@@ -40,7 +40,7 @@ const char* CloseOfClosedChannelException::what() const noexcept {
 }
 
 template<typename T>
-class Chan {
+class ChanData {
 private:
     // data buffer for buffered channels.
     Buffer<T> buffer;
@@ -69,14 +69,14 @@ private:
     std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
 
 public:
-    explicit Chan(size_t n = 0);
+    explicit ChanData(size_t n = 0);
 
     /*
     // Copy constructor
     Chan(const Chan &c);
 
     // Move constructor
-    Chan(Chan &&c);
+    Chan(Chan &&c); 
     */
 
     // blocking send (ex. chan <- 1) does not return a boolean
@@ -105,7 +105,7 @@ public:
 };
 
 template<typename T>
-Chan<T>::Chan(size_t n) : buffer(n) {};
+ChanData<T>::ChanData(size_t n) : buffer(n) {};
 
 /*
 template<typename T>
@@ -130,36 +130,36 @@ Chan<T>::Chan(Chan &&c) :
 */
 
 template<typename T>
-void Chan<T>::send(const T& src) {
+void ChanData<T>::send(const T& src) {
     chan_send(src, true);
 }
 
 template<typename T>
-T Chan<T>::recv() {
+T ChanData<T>::recv() {
     T temp;
     recv(temp);
     return temp;
 }
 
 template<typename T>
-bool Chan<T>::recv(T& dst) {
+bool ChanData<T>::recv(T& dst) {
     std::pair<bool, bool> selected_received = chan_recv(dst, true);
     return selected_received.second;
 }
 
 template<typename T>
-bool Chan<T>::send_nonblocking(const T& src) {
+bool ChanData<T>::send_nonblocking(const T& src) {
     return chan_send(src, false);
 }
 
 template<typename T>
-bool Chan<T>::recv_nonblocking(T& dst) {
+bool ChanData<T>::recv_nonblocking(T& dst) {
     std::pair<bool, bool> selected_received = chan_recv(dst, false);
     return selected_received.first;
 }
 
 template<typename T>
-bool Chan<T>::chan_send(const T& src, bool is_blocking) {
+bool ChanData<T>::chan_send(const T& src, bool is_blocking) {
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     if (!is_blocking
         && !is_closed
@@ -215,7 +215,7 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
 // A non-nil dst must refer to the heap or the caller's stack.
 // two bools in a pair are (selected, received).
 template<typename T>
-std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
+std::pair<bool, bool> ChanData<T>::chan_recv(T& dst, bool is_blocking) {
     // from chan.go:
     // Fast path: check for failed non-blocking operation without acquiring the lock.
     // The order of operations is important here: reversing the operations can lead to
@@ -286,7 +286,7 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
 }
 
 template<typename T>
-void Chan<T>::foreach(std::function<void(T)> f){
+void ChanData<T>::foreach(std::function<void(T)> f){
     T cur_data;
     bool received = recv(cur_data);
     while (received) {
@@ -296,7 +296,7 @@ void Chan<T>::foreach(std::function<void(T)> f){
 }
 
 template<typename T>
-void Chan<T>::close(){
+void ChanData<T>::close(){
     std::unique_lock<std::mutex> lck{chan_lock};
 
     if (is_closed) {
@@ -321,5 +321,30 @@ void Chan<T>::close(){
         send_data_queue.pop();
     }
 }
+
+template<typename T>
+class Chan {
+private:
+    std::shared_ptr<ChanData<T>> chan_data_shared_ptr;
+public:
+    Chan(size_t n = 0) : chan_data_shared_ptr(new ChanData<T>(n)) {}
+    
+    // rule of 5.
+    // default method calls that of std::shared_ptr.
+    ~Chan()                                 = default;
+    Chan(const Chan& c)                     = default;
+    Chan& operator=(const Chan& c)          = default;
+    Chan(Chan&& c)                          = default;
+    Chan& operator=(Chan&& c)               = default;
+
+    // forward methods
+    void send(const T& src)                 {chan_data_shared_ptr->send(src);}
+    bool recv(T& dst)                       {return chan_data_shared_ptr->recv(dst);}
+    T recv()                                {return chan_data_shared_ptr->recv();}
+    bool send_nonblocking(const T& src)     {return chan_data_shared_ptr->send_nonblocking(src);}
+    bool recv_nonblocking(T& dst)           {return chan_data_shared_ptr->recv_nonblocking(dst);}
+    void foreach(std::function<void(T)> f)  {chan_data_shared_ptr->foreach(f);}
+    void close()                            {chan_data_shared_ptr->close();}
+};
 
 #endif
