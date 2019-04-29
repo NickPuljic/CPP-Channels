@@ -182,10 +182,10 @@ TEST_CASE("copy and move constructors") {
         t4.join();
 
         // Check if 5 is still in c1 (it shouldnt be)
-        // std::thread t5{recv_n, std::ref(c1), -1};
+        //std::thread t5{recv_n, std::ref(c1), -1};
         // Give t5 1 second to execute then detatch
-        // std::this_thread::sleep_for(std::chrono::seconds(1));
-        // t5.detach();
+        //std::this_thread::sleep_for(std::chrono::seconds(1));
+        //t5.detach();
     }
     SECTION("test copy constructor") {
         // Send c1 int 5 and 7
@@ -204,10 +204,10 @@ TEST_CASE("copy and move constructors") {
         t4.join();
 
         // Check that c1 also has 5 and 7
-        // std::thread t5{recv_n, std::ref(c1), 5};
-        // t5.join();
-        // std::thread t6{recv_n, std::ref(c1), 7};
-        // t6.join();
+        //std::thread t5{recv_n, std::ref(c1), 5};
+        //t5.join();
+        //std::thread t6{recv_n, std::ref(c1), 7};
+        //t6.join();
     }
 }
 
@@ -332,8 +332,10 @@ TEST_CASE("test close") {
         recv_n_from_channel(chan, 150);
     }
 }
+
 /*
 TEST_CASE( "parallel send and recv" ) {
     send_and_recv();
 }
 */
+

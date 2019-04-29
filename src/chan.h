@@ -12,7 +12,7 @@ class ChannelClosedDuringSendException : public std::exception {
 };
 
 const char* ChannelClosedDuringSendException::what() const noexcept {
-    return "while waiting to send, the channel was closed by another thread.";
+    return "while waiting to send, the channel was closed by another thread";
 }
 
 class ChannelClosedDuringRecvException : public std::exception {
@@ -20,7 +20,23 @@ class ChannelClosedDuringRecvException : public std::exception {
 };
 
 const char* ChannelClosedDuringRecvException::what() const noexcept {
-    return "while waiting to recv, the channel was closed by another thread.";
+    return "while waiting to recv, the channel was closed by another thread";
+}
+
+class ChannelDestructedDuringSendException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* ChannelDestructedDuringSendException::what() const noexcept {
+    return "while waiting to send, the channel was destructed";
+}
+
+class ChannelDestructedDuringRecvException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* ChannelDestructedDuringRecvException::what() const noexcept {
+    return "while waiting to recv, the channel was destructed";
 }
 
 class SendOnClosedChannelException : public std::exception {
@@ -71,13 +87,11 @@ private:
 public:
     explicit ChanData(size_t n = 0);
 
-    /*
-    // Copy constructor
-    Chan(const Chan &c);
-
-    // Move constructor
-    Chan(Chan &&c); 
-    */
+    // destructor is required to release the promises before destruction of queues.
+    // while user definition of Destructor calls for user definition of copy and move,
+    // we forgo because only the Chan wrapper class should access ChanData,
+    // and therefore copy and move are never called.
+    ~ChanData();
 
     // blocking send (ex. chan <- 1) does not return a boolean
     void send(const T& src);
@@ -107,27 +121,23 @@ public:
 template<typename T>
 ChanData<T>::ChanData(size_t n) : buffer(n) {};
 
-/*
 template<typename T>
-Chan<T>::Chan(const Chan &c) :
-    buffer(c.buffer),
-    send_queue(c.send_queue),
-    recv_queue(c.recv_queue),
-    is_closed(),
-    chan_lock() {
-        is_closed = c.is_closed.load();
+ChanData<T>::~ChanData() {
+    // release all receivers.
+    // unlike ChannelClosedDuringRecvException, 
+    // ChannelDestructedDuringRecvException is rethrown by the receiver.
+    while (!recv_queue.empty()) {
+        recv_queue.front().set_exception(std::make_exception_ptr(ChannelDestructedDuringRecvException()));
+        recv_queue.pop();
     }
 
-template<typename T>
-Chan<T>::Chan(Chan &&c) :
-    buffer(std::move(c.buffer)),
-    send_queue(std::move(c.send_queue)),
-    recv_queue(std::move(c.recv_queue)),
-    is_closed(),
-    chan_lock() {
-        is_closed = c.is_closed.exchange(0);
+    // release all senders.
+    while (!send_queue.empty()) {
+        send_queue.front().set_exception(std::make_exception_ptr(ChannelDestructedDuringSendException()));
+        send_queue.pop();
+        send_data_queue.pop();
     }
-*/
+}
 
 template<typename T>
 void ChanData<T>::send(const T& src) {
