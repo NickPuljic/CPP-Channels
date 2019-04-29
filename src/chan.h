@@ -6,12 +6,21 @@
 #include <functional>
 #include <exception>
 
+// for simplicity, we inherit std::exception and not std::runtime_error for now.
 class ChannelClosedDuringSendException : public std::exception {
     const char* what() const noexcept override;
 };
 
 const char* ChannelClosedDuringSendException::what() const noexcept {
-    return "While waiting to send, the channel was closed by another thread.";
+    return "while waiting to send, the channel was closed by another thread.";
+}
+
+class ChannelClosedDuringRecvException : public std::exception {
+    const char* what() const noexcept override;
+};
+
+const char* ChannelClosedDuringRecvException::what() const noexcept {
+    return "while waiting to recv, the channel was closed by another thread.";
 }
 
 class SendOnClosedChannelException : public std::exception {
@@ -33,28 +42,42 @@ const char* CloseOfClosedChannelException::what() const noexcept {
 template<typename T>
 class Chan {
 private:
+    // data buffer for buffered channels.
     Buffer<T> buffer;
-    // queues for waiting senders and receivers, respectively
-    // using a std::promise object, we pass a value,
-    // that is acquired asynchronously by a corresponding std::future object
-    std::queue<std::pair<std::promise<void>*, T>> send_queue;
-    std::queue<std::promise<T>*> recv_queue;
+    
+    // queues for waiting senders.
+    // sender creates a future-promise pair, pushes the promise to send_queue, 
+    // and waits until it get_value() from the future.
+    // a receiver pops from the send_queue, and set_value() the promise,
+    // thereby waking up the waiting sender.
+    std::queue<std::promise<void>> send_queue;
+
+    // sender passes the data of type T to the receiver thru sender_data_queue.
+    std::queue<T> send_data_queue;
+
+    // same logic as send_promise_queue,
+    // but the data of type T is sent via promise, not a separate queue.
+    std::queue<std::promise<T>> recv_queue;
 
     // is_closed is atomic to enable lock-free fast-track condition in chan_recv.
-    // note that assignment and operator= on cur_size are atomic
+    // note that assignment and operator= on cur_size are atomic.
     std::atomic<bool> is_closed{false};
+    
     std::mutex chan_lock;
 
     bool chan_send(const T& src, bool is_blocking);
     std::pair<bool, bool> chan_recv(T& dst, bool is_blocking);
+
 public:
     explicit Chan(size_t n = 0);
 
+    /*
     // Copy constructor
     Chan(const Chan &c);
 
     // Move constructor
     Chan(Chan &&c);
+    */
 
     // blocking send (ex. chan <- 1) does not return a boolean
     void send(const T& src);
@@ -84,6 +107,7 @@ public:
 template<typename T>
 Chan<T>::Chan(size_t n) : buffer(n) {};
 
+/*
 template<typename T>
 Chan<T>::Chan(const Chan &c) :
     buffer(c.buffer),
@@ -103,6 +127,7 @@ Chan<T>::Chan(Chan &&c) :
     chan_lock() {
         is_closed = c.is_closed.exchange(0);
     }
+*/
 
 template<typename T>
 void Chan<T>::send(const T& src) {
@@ -153,12 +178,8 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // pass the value we want to send directly to the receiver,
     // bypassing the buffer (if any).
     if (!recv_queue.empty()) {
-        // Get the first promise pointer on the queue
-        std::promise<T>* promise_ptr = recv_queue.front();
+        recv_queue.front().set_value(src);
         recv_queue.pop();
-
-        // give the promise the value of src
-        promise_ptr->set_value(src);
         return true;
     }
 
@@ -176,14 +197,12 @@ bool Chan<T>::chan_send(const T& src, bool is_blocking) {
     // block on the channel. Some receiver will complete our operation for us.
     std::promise<void> promise;
     std::future<void> future = promise.get_future();
-
-    std::pair<std::promise<void>*, T> promise_data_pair(&promise, src);
-    send_queue.push(promise_data_pair);
+    send_queue.push(std::move(promise));
+    send_data_queue.push(src);
 
     lck.unlock();
 
     // if close() passes an exception, rethrow to user.
-    // Note that there is no data passing here (ex. dst = future.get()), b/c done in chan_recv.
     future.get();
 
     return true;
@@ -223,17 +242,16 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // (both map to the same buffer slot because the queue (buffer) is full,
     // i.e. if buffer was not full, no sender would be waiting)
     if (!send_queue.empty()) {
-        std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front(); // TODO beware mem
-        send_queue.pop();
-
         if (buffer.capacity() == 0) {
-            dst = promise_data_pair.second; // TODO beware mem
+            dst = send_data_queue.front();
         } else {
-            dst = buffer.front(); // TODO beware mem
+            dst = buffer.front();
             buffer.pop();
-            buffer.push(promise_data_pair.second);
+            buffer.push(send_data_queue.front());
         }
-        promise_data_pair.first->set_value(); // sender is unblocked.
+        send_queue.front().set_value(); // sender is unblocked.
+        send_data_queue.pop();
+        send_queue.pop();
         return std::pair<bool, bool>(true, true);
     }
 
@@ -252,15 +270,15 @@ std::pair<bool, bool> Chan<T>::chan_recv(T& dst, bool is_blocking) {
     // block on the channel.
     std::promise<T> promise;
     std::future<T> future = promise.get_future();
-    recv_queue.push(&promise);
+    recv_queue.push(std::move(promise));
 
     lck.unlock();
 
     try {
         // if close() passes exception, dst is not set, because future.get() throws the exception.
         dst = future.get();
-    }
-    catch (...) { // TODO organize exceptions
+    } 
+    catch (ChannelClosedDuringRecvException) {
         // ignore exception passed by close(), b/c !is_closed indicator is returned to user.
     }
 
@@ -282,7 +300,6 @@ void Chan<T>::close(){
     std::unique_lock<std::mutex> lck{chan_lock};
 
     if (is_closed) {
-        // TODO organize exceptions.
         throw CloseOfClosedChannelException();
     }
 
@@ -290,21 +307,18 @@ void Chan<T>::close(){
 
     // release all receivers.
     while (!recv_queue.empty()) {
-        std::promise<T>* promise_ptr = recv_queue.front();
+        // the waiting receiver should not throw this exception.
+        recv_queue.front().set_exception(std::make_exception_ptr(ChannelClosedDuringRecvException()));
         recv_queue.pop();
-        // instead of passing some data indicating close() to the future, pass exception for clarity.
-        // the waiting receiver should handle this exception.
-        // TODO undo exception + try/catch and send pair of data.
-        promise_ptr->set_exception(std::make_exception_ptr(std::exception()));
     }
 
     // release all senders.
     // By Go semantics, senders should throw exception to users.
     while (!send_queue.empty()) {
-        std::pair<std::promise<void>*, T>& promise_data_pair = send_queue.front();
-        send_queue.pop();
         // the waiting sender should rethrow this exception.
-        promise_data_pair.first->set_exception(std::make_exception_ptr(ChannelClosedDuringSendException()));
+        send_queue.front().set_exception(std::make_exception_ptr(ChannelClosedDuringSendException()));
+        send_queue.pop();
+        send_data_queue.pop();
     }
 }
 

@@ -161,7 +161,7 @@ TEST_CASE("nonblocking send and recive test") {
         t1.join();
     }
 }
-
+/*
 TEST_CASE("copy and move constructors") {
     Chan<int> c1(5);
 
@@ -210,25 +210,25 @@ TEST_CASE("copy and move constructors") {
         t6.join();
     }
 }
-
+*/
 TEST_CASE("unbuffered channel") {
-    Chan<int> chan;
-
     SECTION("unbuffered blocking two channels") {
+        Chan<int> chan;
         // Send value to unbuffered channel and block
         std::thread t1{send_n, std::ref(chan), 8};
         std::this_thread::sleep_for(std::chrono::seconds(1));
         // Should fail if unbuffered channel recv a second time
-        std::thread t2{must_stay_blocked, std::ref(chan)};
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // std::thread t2{must_stay_blocked, std::ref(chan)};
+        // std::this_thread::sleep_for(std::chrono::seconds(1));
 
         // Recv from first block and make sure its correct
         int i = chan.recv();
         REQUIRE(i == 8);
         t1.join();
-        t2.detach();
+        //t2.detach();
     }
     SECTION("unbuffered receive twice") {
+        Chan<int> chan;
         // Send on two channels
         std::thread t1{send_n, std::ref(chan), 5};
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -331,7 +331,8 @@ TEST_CASE("test close") {
         recv_n_from_channel(chan, 150);
     }
 }
-
+/*
 TEST_CASE( "parallel send and recv" ) {
     send_and_recv();
 }
+*/
