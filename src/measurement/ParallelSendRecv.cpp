@@ -3,6 +3,7 @@
 //#include <random>
 #include <chrono>
 
+// probably, senders will exit earlier than the recvers.
 template<typename T>
 void do_send(
 	Chan<T>& chan, 
@@ -10,12 +11,11 @@ void do_send(
 	std::chrono::microseconds& elapsed) {
 
     auto start = std::chrono::high_resolution_clock::now();
-
     for (auto data : sender_data) {
         chan.send(data);
     }
-
-    elapsed = std::chrono::high_resolution_clock::now() - start;
+    elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+    	std::chrono::high_resolution_clock::now() - start);
 }
 
 template<typename T>
@@ -24,17 +24,18 @@ void do_recv(
 	std::vector<T>& recver_data,
 	std::chrono::microseconds& elapsed,
 	std::atomic<unsigned>& recv_count,
+	unsigned& n_data,
 	std::condition_variable& all_recved_cond) {
     
-	T tmp;
+	T data;
 	bool received;
 	while (true) {
 		auto start = std::chrono::high_resolution_clock::now();
-		received = chan.recv(num);
+		received = chan.recv(data);
 		elapsed += std::chrono::duration_cast<std::chrono::microseconds>(
 			std::chrono::high_resolution_clock::now() - start);
 		if (received) {
-			recver_data.push_back(num);
+			recver_data.push_back(data);
 			recv_count += 1;
 			// TODO non-atomic btw ++ and load ok?
 			if (recv_count == n_data) {
@@ -58,7 +59,7 @@ void measure_parallel_send_and_recv(
     bool debug = false,
     bool is_T_comparable = false) {
 
-    assert((n_senders > 0 && n_recvers > 0 && n_data > 10 && recv_for > 0));
+    assert((n_senders > 0 && n_recvers > 0 && n_data > 10));
 
     Chan<T> chan(buffer_sz);
 
@@ -90,10 +91,10 @@ void measure_parallel_send_and_recv(
 
     //////////////////////////////////////////////////////////////////////////////// 
     // Send and Recv
-    // TODO how long does thread creation take? As n_data increases, is it negligible?
 
     std::atomic<unsigned> recv_count{0};
     std::condition_variable all_recved_cond;
+    std::mutex all_recved_mutex;
 
     // threads to join later.
     std::vector<std::thread> threads;
@@ -102,12 +103,13 @@ void measure_parallel_send_and_recv(
     for (auto i = 0; i < n_senders; ++i){
         //std::thread t{send_all, std::ref(chan), std::ref(each_sender_data[i])};
         threads.push_back(std::thread(
-        	send_all, 
+        	do_send, 
         	std::ref(chan), 
         	std::ref(each_sender_data[i]),
         	std::ref(each_sender_duration[i]) ));
     }
 
+    // launch all recvers.
     for (auto i = 0; i < n_recvers; ++i) {
         //std::thread t{recv_for_seconds, std::ref(chan), std::ref(each_recver_data[i]), std::ref(recv_for)};
         threads.push_back(std::thread(
@@ -116,14 +118,23 @@ void measure_parallel_send_and_recv(
         	std::ref(each_recver_data[i]), 
         	std::ref(each_recver_duration[i]),
         	std::ref(recv_count),
+        	std::ref(n_data),
         	std::ref(all_recved_cond) ));
     }
 
-    // wait for all senders and recvers to finish.
-    all_recved_cond.wait();
+    // one recver will recv last element, and increment recv_count to 1000.
+    // then, that recver will notify this main thread.
+    // upon wakeup, the main thread closes the channel, so that other recvers can also exit.
+    // why lock? condition variables require use of lock, and we can't use future/promise pair here.
+    std::unique_lock<std::mutex> lck {all_recved_mutex};
+    all_recved_cond.wait(lck);
+    lck.unlock();
+
     chan.close();
-    for (auto t : threads) {
-    	t.join();
+
+    // wait for all senders and recvers to finish.
+    for (auto i = 0; i < threads.size(); ++i) {
+    	threads[i].join();
     }
 
     ////////////////////////////////////////////////////////////////////////////////
