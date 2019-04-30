@@ -1,6 +1,6 @@
 #include "../chan.h"
 #include <iostream>
-//#include <random>
+#include <random>
 #include <chrono>
 
 // probably, senders will exit earlier than the recvers.
@@ -101,25 +101,28 @@ void measure_parallel_send_and_recv(
 
     // launch all senders.
     for (auto i = 0; i < n_senders; ++i){
-        //std::thread t{send_all, std::ref(chan), std::ref(each_sender_data[i])};
-        threads.push_back(std::thread(
-        	do_send, 
+    	std::thread t{
+        	do_send<int>, 
         	std::ref(chan), 
         	std::ref(each_sender_data[i]),
-        	std::ref(each_sender_duration[i]) ));
+        	std::ref(each_sender_duration[i])
+        };
+        threads.push_back(std::move(t));
     }
 
     // launch all recvers.
     for (auto i = 0; i < n_recvers; ++i) {
         //std::thread t{recv_for_seconds, std::ref(chan), std::ref(each_recver_data[i]), std::ref(recv_for)};
-        threads.push_back(std::thread(
-        	do_recv, 
+        std::thread t{
+        	do_recv<int>, 
         	std::ref(chan), 
         	std::ref(each_recver_data[i]), 
         	std::ref(each_recver_duration[i]),
         	std::ref(recv_count),
         	std::ref(n_data),
-        	std::ref(all_recved_cond) ));
+        	std::ref(all_recved_cond)
+        };
+        threads.push_back(std::move(t));
     }
 
     // one recver will recv last element, and increment recv_count to 1000.
@@ -166,9 +169,26 @@ void measure_parallel_send_and_recv(
 	////////////////////////////////////////////////////////////////////////////////
 	// Output results to StdErr for data collection in .csv
 
-
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Random Functors
+
+// 1. int (see textbook 14.5)
+class Rand_int {
+private:
+	std::default_random_engine random_engine;
+	std::uniform_int_distribution<> distribution;
+public:
+	Rand_int(int low, int high) : distribution{low, high} {
+		random_engine.seed(std::chrono::system_clock::now().time_since_epoch().count());
+	}
+	int operator()() {
+		return distribution(random_engine);
+	}
+};
+
 int main() {
-	measure_parallel_send_and_recv();
+	Rand_int rnd {0, 100000};
+	measure_parallel_send_and_recv<int>(rnd);
 }
