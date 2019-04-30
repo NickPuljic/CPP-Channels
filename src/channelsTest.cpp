@@ -63,14 +63,20 @@ void recv_for_seconds(Chan<int>& chan, std::vector<int>& recver_data, unsigned& 
 
     auto start = std::chrono::high_resolution_clock::now();
 
+    int num;
+    bool received;
     while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start).count() < seconds) {
-        int num;
-        chan.recv(num); // assumes no close.
-        recver_data.push_back(num);
+        received = chan.recv(num);
+        // assumes channel will be closed.
+        if (received) {
+            recver_data.push_back(num);
+        } else {
+            break;
+        }
     }
 }
 
-void send_and_recv(
+void parallel_send_and_recv(
     unsigned chan_size = 0,
     unsigned n_senders = 3,
     unsigned n_recvers = 3,
@@ -116,6 +122,9 @@ void send_and_recv(
 
     // assumes this thread sleeps until all recvers and senders finish.
     std::this_thread::sleep_for(std::chrono::seconds(recv_for + 5));
+
+    // close channel so that receivers can unblock.
+    chan.close();
 
     // merge each_recver_data
     std::vector<int> all_recver_data;
@@ -333,9 +342,7 @@ TEST_CASE("test close") {
     }
 }
 
-/*
 TEST_CASE( "parallel send and recv" ) {
-    send_and_recv();
+    parallel_send_and_recv();
 }
-*/
 
