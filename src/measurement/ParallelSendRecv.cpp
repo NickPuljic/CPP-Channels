@@ -49,17 +49,30 @@ void do_recv(
 	}
 }
 
+void print_duration_vector(std::vector<std::chrono::microseconds>& v) {
+	for (auto i = 0; i < v.size(); ++i) {
+		std::cout << v[i].count();
+		if (i < v.size() - 1) {
+			std::cout << ",";
+		}
+	}
+	std::cout << std::endl;
+}
+
 template<typename T, typename RandomFunctor>
 void measure_parallel_send_and_recv(
 	RandomFunctor random_functor,
+	// this sucks, but getting type name requires cxxabi.h or boost.
+	std::string name_of_T,
+	// be careful of argument order. TODO use strong types.
     unsigned buffer_sz = 0,
     unsigned n_senders = 3,
     unsigned n_recvers = 3,
-    unsigned n_data = 1000,
+    unsigned n_data = 100000,
     bool debug = false,
     bool is_T_comparable = false) {
 
-    assert((n_senders > 0 && n_recvers > 0 && n_data > 10));
+    assert((n_senders > 0 && n_recvers > 0 && n_data > 100));
 
     Chan<T> chan(buffer_sz);
 
@@ -151,7 +164,7 @@ void measure_parallel_send_and_recv(
 
     	assert(recved_data_count == n_data);
 
-    	/*
+    	/* if T is not comparable, this will fail at compile time?
     	if (is_T_comparable == true) {
 		    // merge each_recver_data
 		    std::vector<T> all_recver_data;
@@ -167,8 +180,20 @@ void measure_parallel_send_and_recv(
 	}
 
 	////////////////////////////////////////////////////////////////////////////////
-	// Output results to StdErr for data collection in .csv
+	// Output results for data collection in .csv
+	// ex: g++ -std=c++11 ParallelSendRecv.cpp -o psr; ./psr > out.csv
 
+	// params
+	std::cout << "buffer size,number of senders,number of recvers,number of data,data type" << std::endl;
+	std::cout << buffer_sz << "," << n_senders << "," << n_recvers << "," << n_data << "," << name_of_T << std::endl;
+	
+	// results
+	std::cout << "each sender duration (microseconds)" << std::endl;
+	print_duration_vector(each_sender_duration);
+	std::cout << "each recver duration (microseconds)" << std::endl;
+	print_duration_vector(each_recver_duration);
+
+	std::cout << std::endl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -188,7 +213,12 @@ public:
 	}
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// Experiments
+
 int main() {
+	// be careful of argument order.
 	Rand_int rnd {0, 100000};
-	measure_parallel_send_and_recv<int>(rnd);
+	measure_parallel_send_and_recv<int>(rnd, "int");
+	measure_parallel_send_and_recv<int>(rnd, "int", 0, 3, 3, 1000);
 }
