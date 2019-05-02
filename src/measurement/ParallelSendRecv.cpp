@@ -59,6 +59,28 @@ void print_duration_vector(std::vector<std::chrono::microseconds>& v) {
 	std::cout << std::endl;
 }
 
+std::pair<double, double> get_mean_stdev(std::vector<std::chrono::microseconds>& v) {
+    std::vector<unsigned> results;
+    for (auto microsecs : v) {
+        results.push_back(microsecs.count());
+    }
+    double sum = std::accumulate(results.begin(), results.end(), 0.0);
+    double mean = sum / results.size();
+    double sum_of_squares = std::inner_product(results.begin(), results.end(), results.begin(), 0.0);
+    double stdev = std::sqrt(sum_of_squares / results.size() - mean * mean);
+    return std::pair<double, double>(mean, stdev);
+}
+
+double get_mean(std::vector<std::chrono::microseconds>& v) {
+    std::vector<unsigned> results;
+    for (auto microsecs : v) {
+        results.push_back(microsecs.count());
+    }
+    double sum = std::accumulate(results.begin(), results.end(), 0.0);
+    double mean = sum / results.size();
+    return mean;
+}
+
 template<typename T, typename RandomFunctor>
 void measure_parallel_send_and_recv(
 	RandomFunctor random_functor,
@@ -69,8 +91,8 @@ void measure_parallel_send_and_recv(
     unsigned n_senders = 3,
     unsigned n_recvers = 3,
     unsigned n_data = 100000,
-    bool debug = false,
-    bool is_T_comparable = false) {
+    bool debug = true) {
+    // bool is_T_comparable = false) {
 
     assert((n_senders > 0 && n_recvers > 0 && n_data > 100));
 
@@ -183,17 +205,18 @@ void measure_parallel_send_and_recv(
 	// Output results for data collection in .csv
 	// ex: g++ -std=c++11 ParallelSendRecv.cpp -o psr; ./psr > out.csv
 
-	// params
-	std::cout << "buffer size,number of senders,number of recvers,number of data,data type" << std::endl;
-	std::cout << buffer_sz << "," << n_senders << "," << n_recvers << "," << n_data << "," << name_of_T << std::endl;
-	
-	// results
-	std::cout << "each sender duration (microseconds)" << std::endl;
-	print_duration_vector(each_sender_duration);
-	std::cout << "each recver duration (microseconds)" << std::endl;
-	print_duration_vector(each_recver_duration);
+    auto send_mean = get_mean(each_sender_duration);
+    auto recv_mean = get_mean(each_recver_duration);
 
-	std::cout << std::endl;
+    std::cout << buffer_sz << "," 
+        << n_senders << "," 
+        << n_recvers << "," 
+        << n_data << "," 
+        << name_of_T << ","
+        << send_mean << ","
+        << recv_mean << std::endl;
+        //<< send_mean_stdev.second << ","
+        //<< recv_mean_stdev.second << ","
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -217,8 +240,39 @@ public:
 // Experiments
 
 int main() {
+    // column titles.
+    std::cout << "buffer size,"
+        "number of senders,"
+        "number of recvers,"
+        "number of data,"
+        "data type," 
+        "sender duartion mean,"
+        "recver duartion mean" << std::endl;
+        //"sender duartion standard deviation,"
+        //"recver duartion standard deviation" << std::endl;
+
 	// be careful of argument order.
-	Rand_int rnd {0, 100000};
-	measure_parallel_send_and_recv<int>(rnd, "int");
-	measure_parallel_send_and_recv<int>(rnd, "int", 0, 3, 3, 1000);
+	Rand_int rnd {0, 100000000};
+
+    std::vector<unsigned> data_sizes{1000, 10000, 100000};
+    std::vector<unsigned> buffer_sizes{0, 10, 50};
+
+    for (auto n_senders = 1; n_senders <= 4; ++n_senders) {
+        for (auto n_recvers = 1; n_recvers <= 4; ++n_recvers) {
+            for (auto n_data : data_sizes) {
+                for (auto buffer_size : buffer_sizes) {
+                    measure_parallel_send_and_recv<int>(
+                        rnd, 
+                        "int",
+                        buffer_size,
+                        n_senders,
+                        n_recvers,
+                        n_data);
+                }
+            }
+        }
+    }
+
+	//measure_parallel_send_and_recv<int>(rnd, "int");
+	//measure_parallel_send_and_recv<int>(rnd, "int", 0, 3, 3, 1000);
 }
