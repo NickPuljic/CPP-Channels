@@ -4,7 +4,7 @@
 
 using namespace std;
 
-void send_to_channel(Chan<int>& channel) {
+void send_to_channel(Chan<int> channel) {
     channel.send(0);
 }
 
@@ -14,7 +14,7 @@ int main() {
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int n = 0; n < 500000; n++) {
-        std::thread t1{send_to_channel, std::ref(unbufferedChannel)};
+        std::thread t1{send_to_channel, unbufferedChannel};
 
         unbufferedChannel.recv();
 

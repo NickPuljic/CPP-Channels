@@ -3,17 +3,15 @@ package main
 import (
     "log"
     "time"
-    //"math/rand"
 )
 
 func main() {
-    i := 20
+    i := 50
 
     start := time.Now()
 
     for n := 0; n < 500000; n++ {
-        //i := rand.Intn(99) + 1
-
+        
         bufferedChannel := make(chan int, i)
 
         for m := 0; m < i; m++ {

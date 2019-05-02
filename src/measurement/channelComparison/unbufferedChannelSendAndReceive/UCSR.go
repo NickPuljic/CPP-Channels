@@ -10,7 +10,7 @@ func main() {
 
     start := time.Now()
 
-    for n := 0; n < 50000; n++ {
+    for n := 0; n < 500000; n++ {
         go func() { unbufferedChannel <- 0 }()
 
         <- unbufferedChannel
